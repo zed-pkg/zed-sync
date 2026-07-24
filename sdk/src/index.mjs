@@ -15,7 +15,7 @@ export {
   combineTelemetry,
   makeOtelTelemetry,
 } from "./telemetry.mjs";
-export { MemoryStore, IndexedDbStore } from "./store.mjs";
+export { MemoryStore, IndexedDbStore, DEFAULT_MAX_QUEUE_LENGTH } from "./store.mjs";
 export { SyncClient } from "./client.mjs";
 export { decodeBackendFrame, decodeSupabaseChange } from "./transports/decode.mjs";
 export { startSupabase } from "./transports/supabase.mjs";
