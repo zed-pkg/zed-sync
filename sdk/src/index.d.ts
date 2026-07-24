@@ -146,6 +146,7 @@ export class SyncClient {
     writeMode?: WriteModeValue;
     errorPolicy?: ErrorPolicyValue;
     conflictResolution?: ConflictResolutionValue;
+    tables?: string[];
     onError?: (err: unknown, ctx: Record<string, unknown>) => void;
   });
   actor: string;
