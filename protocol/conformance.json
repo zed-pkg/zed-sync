@@ -49,6 +49,48 @@
       "local": { "version": { "wall_ms": 2000, "counter": 1, "actor": "aaa" }, "dirty": false },
       "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 2000, "counter": 1, "actor": "bbb" }, "row": { "id": "o1" }, "at_ms": 2000 },
       "expected": "Apply"
+    },
+    {
+      "name": "actor breaks equal wall+counter as older",
+      "local": { "version": { "wall_ms": 2000, "counter": 1, "actor": "bbb" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 2000, "counter": 1, "actor": "aaa" }, "row": { "id": "o1" }, "at_ms": 2000 },
+      "expected": { "Ignore": "Stale" }
+    },
+    {
+      "name": "higher wall beats higher counter",
+      "local": { "version": { "wall_ms": 2000, "counter": 9, "actor": "srv" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 3000, "counter": 0, "actor": "srv" }, "row": { "id": "o1" }, "at_ms": 3000 },
+      "expected": "Apply"
+    },
+    {
+      "name": "newer delete applies over clean local",
+      "local": { "version": { "wall_ms": 2000, "counter": 0, "actor": "srv" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "delete", "id": "o1", "version": { "wall_ms": 3000, "counter": 0, "actor": "srv" }, "row": null, "at_ms": 3000 },
+      "expected": "Apply"
+    },
+    {
+      "name": "newer delete conflicts with dirty local",
+      "local": { "version": { "wall_ms": 2000, "counter": 0, "actor": "dev" }, "dirty": true },
+      "incoming": { "table": "orders", "op": "delete", "id": "o1", "version": { "wall_ms": 3000, "counter": 0, "actor": "srv" }, "row": null, "at_ms": 3000 },
+      "expected": "Conflict"
+    },
+    {
+      "name": "stale delete is ignored",
+      "local": { "version": { "wall_ms": 2000, "counter": 0, "actor": "srv" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "delete", "id": "o1", "version": { "wall_ms": 1000, "counter": 0, "actor": "srv" }, "row": null, "at_ms": 1000 },
+      "expected": { "Ignore": "Stale" }
+    },
+    {
+      "name": "same version on dirty local is already applied, not a conflict",
+      "local": { "version": { "wall_ms": 2000, "counter": 3, "actor": "dev" }, "dirty": true },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 2000, "counter": 3, "actor": "dev" }, "row": { "id": "o1" }, "at_ms": 2000 },
+      "expected": { "Ignore": "AlreadyApplied" }
+    },
+    {
+      "name": "stale incoming vs dirty local is stale, not a conflict",
+      "local": { "version": { "wall_ms": 2000, "counter": 0, "actor": "dev" }, "dirty": true },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 1000, "counter": 0, "actor": "srv" }, "row": { "id": "o1" }, "at_ms": 1000 },
+      "expected": { "Ignore": "Stale" }
     }
   ],
   "echoes": [
