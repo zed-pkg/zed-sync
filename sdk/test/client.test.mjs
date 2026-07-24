@@ -137,6 +137,22 @@ test("server-wins conflict adopts server row and drops the queued write", async 
   assert.equal((await store.pending()).length, 0, "queued write dropped on server-wins");
 });
 
+test("write-queue overflow surfaces through the client error policy", async () => {
+  const store = new MemoryStore({ maxQueueLength: 2 });
+  const errors = [];
+  const client = new SyncClient({
+    store, actor: "dev-1",
+    send: async () => {
+      throw new Error("offline"); // keep every write queued
+    },
+    errorPolicy: ErrorPolicy.EMIT_ONLY,
+    onError: (err, ctx) => errors.push(ctx),
+  });
+  for (let i = 0; i < 5; i++) await client.write("t", `row-${i}`, { id: `row-${i}` });
+  assert.equal((await store.pending()).length, 2, "queue held at the cap");
+  assert.ok(errors.some((c) => c.reason === "queue-overflow"), "overflow surfaced via onError");
+});
+
 test("applyChange drops incoming changes for non-allowlisted tables", async () => {
   const telemetry = recordingTelemetry();
   const { client, store } = makeClient({ tables: ["products"], telemetry });
