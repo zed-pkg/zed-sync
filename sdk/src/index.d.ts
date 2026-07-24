@@ -58,6 +58,8 @@ export function assertConflictResolution(resolution: string): ConflictResolution
 
 export function compareHlc(a: Hlc, b: Hlc): -1 | 0 | 1;
 export function encodeHlc(h: Hlc): string;
+/** Reject a remote stamp whose wall clock runs more than this far ahead (ms). */
+export const MAX_DRIFT_MS: number;
 export class Clock {
   constructor(actor: string);
   actor: string;
@@ -95,7 +97,12 @@ export interface Store {
   getCursor(scope: string): Promise<{ cursor: string; lastSyncedAtMs: number } | null>;
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
+/** Default upper bound on the durable write-queue length. */
+export const DEFAULT_MAX_QUEUE_LENGTH: number;
 export class MemoryStore implements Store {
+  constructor(opts?: { maxQueueLength?: number });
+  maxQueueLength: number;
+  onOverflow: ((dropped: Record<string, unknown>) => void) | null;
   getRow(table: string, id: string): Promise<{ row: unknown; meta: RowMeta } | null>;
   putRow(table: string, id: string, row: unknown, meta: RowMeta): Promise<void>;
   removeRow(table: string, id: string, meta: RowMeta): Promise<void>;
@@ -106,7 +113,9 @@ export class MemoryStore implements Store {
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
 export class IndexedDbStore implements Store {
-  static open(dbName?: string, idb?: IDBFactory): Promise<IndexedDbStore>;
+  static open(dbName?: string, idb?: IDBFactory, opts?: { maxQueueLength?: number }): Promise<IndexedDbStore>;
+  maxQueueLength: number;
+  onOverflow: ((dropped: Record<string, unknown>) => void) | null;
   getRow(table: string, id: string): Promise<{ row: unknown; meta: RowMeta } | null>;
   putRow(table: string, id: string, row: unknown, meta: RowMeta): Promise<void>;
   removeRow(table: string, id: string, meta: RowMeta): Promise<void>;
@@ -137,6 +146,7 @@ export class SyncClient {
     writeMode?: WriteModeValue;
     errorPolicy?: ErrorPolicyValue;
     conflictResolution?: ConflictResolutionValue;
+    tables?: string[];
     onError?: (err: unknown, ctx: Record<string, unknown>) => void;
   });
   actor: string;
@@ -173,6 +183,7 @@ export function startBackendStream(opts: {
   onStatus?: (status: string) => void;
   WebSocketImpl?: typeof WebSocket;
 }): { stop(): void };
+
 export function startSync(opts: {
   actor: string;
   tables: string[];

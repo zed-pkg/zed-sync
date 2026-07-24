@@ -19,7 +19,7 @@ export function makeBackendSender({ baseUrl, getToken, fetchImpl = fetch }) {
     /** @type {Record<string,string>} */
     const headers = { "content-type": "application/json", "idempotency-key": change.write_key };
     if (getToken) headers.authorization = `Bearer ${await getToken()}`;
-    const res = await fetchImpl(`${base}/api/sync/${change.table}`, {
+    const res = await fetchImpl(`${base}/api/sync/${encodeURIComponent(change.table)}`, {
       method: "POST",
       headers,
       body: JSON.stringify(change),

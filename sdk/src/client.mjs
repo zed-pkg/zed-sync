@@ -34,6 +34,7 @@ export class SyncClient {
    * @param {string} [deps.writeMode]          default WriteMode (enum)
    * @param {string} [deps.errorPolicy]        default ErrorPolicy (enum)
    * @param {string} [deps.conflictResolution] default ConflictResolution (enum)
+   * @param {string[]} [deps.tables]           incoming-change table allowlist; omit to allow all
    * @param {(err: unknown, ctx: object) => void} [deps.onError]
    */
   constructor({
@@ -44,6 +45,7 @@ export class SyncClient {
     writeMode = WriteMode.OPTIMISTIC_QUEUE,
     errorPolicy = ErrorPolicy.EMIT_ONLY,
     conflictResolution = ConflictResolution.SERVER_WINS,
+    tables,
     onError,
   }) {
     if (!store) throw new TypeError("SyncClient requires a store");
@@ -55,8 +57,19 @@ export class SyncClient {
     this.writeMode = assertWriteMode(writeMode);
     this.errorPolicy = assertErrorPolicy(errorPolicy);
     this.conflictResolution = assertConflictResolution(conflictResolution);
+    /** @type {Set<string>|null} allowlist of tables incoming changes may touch */
+    this.tables = tables ? new Set(tables) : null;
     this.onError = onError;
     this.clock = new Clock(actor);
+    // Route bounded-queue overflow drops through the configured error policy.
+    if (store && "onOverflow" in store) {
+      store.onOverflow = (dropped) =>
+        this.#surface(
+          new Error(`sync write queue overflow: dropped oldest queued write for ${dropped.table}/${dropped.id}`),
+          { table: dropped.table, id: dropped.id, op: dropped.op, reason: "queue-overflow" },
+          this.errorPolicy,
+        );
+    }
   }
 
   /** @param {unknown} err @param {object} ctx @param {string} policy */
@@ -74,6 +87,15 @@ export class SyncClient {
    * @returns {Promise<"applied"|"ignored"|"conflict-resolved"|"refreshed">}
    */
   async applyChange(incoming) {
+    // Table allowlist: drop a change for a table this client was not configured to
+    // sync. Rejected BEFORE folding the stamp into the clock so a non-allowlisted
+    // (and potentially hostile) stamp cannot advance/poison the local clock.
+    if (this.tables && !this.tables.has(incoming.table)) {
+      this.telemetry.event("sync.change.rejected", {
+        table: incoming.table, id: incoming.id, reason: "table-not-allowed",
+      });
+      return "ignored";
+    }
     this.clock.observe(incoming.version);
     const existing = await this.store.getRow(incoming.table, incoming.id);
     const local = existing ? { version: existing.meta.version, dirty: existing.meta.dirty } : null;
@@ -131,7 +153,7 @@ export class SyncClient {
    * @param {"upsert"|"delete"|{op?:string, merge?:boolean, mode?:string, errorPolicy?:string}} [options]
    * @returns {Promise<{ status: string, version: object }>}
    */
-  async write(table, id, row, options = "upsert") {
+  async write(table, id, row, options = {}) {
     const opts = typeof options === "string" ? { op: options } : options;
     const op = opts.op ?? (row === null ? "delete" : "upsert");
     const mode = assertWriteMode(opts.mode ?? this.writeMode);

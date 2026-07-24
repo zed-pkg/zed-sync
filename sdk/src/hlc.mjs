@@ -4,6 +4,11 @@
 
 /** @typedef {{ wall_ms: number, counter: number, actor: string }} Hlc */
 
+/** Reject a remote stamp whose wall clock runs more than this far ahead of ours
+ * (5 minutes). Without the bound one attacker-controlled far-future `wall_ms`
+ * would permanently poison the clock and win every LAST_WRITE_WINS conflict. */
+export const MAX_DRIFT_MS = 300_000;
+
 /** Total order: wall_ms, then counter, then actor. @param {Hlc} a @param {Hlc} b */
 export function compareHlc(a, b) {
   if (a.wall_ms !== b.wall_ms) return a.wall_ms < b.wall_ms ? -1 : 1;
@@ -48,12 +53,18 @@ export class Clock {
 
   /** Fold in an observed remote stamp. @param {Hlc} remote @param {number} [nowMs] */
   observe(remote, nowMs = Date.now()) {
-    const maxWall = Math.max(nowMs, this.wall_ms, remote.wall_ms);
-    if (maxWall === this.wall_ms && maxWall === remote.wall_ms) {
+    // Clock-drift clamp: an over-drift remote wall is IGNORED (not folded in), so
+    // the local clock never advances past nowMs + MAX_DRIFT_MS. In range, behavior
+    // is identical to the classic HLC update.
+    const remoteOk = remote.wall_ms <= nowMs + MAX_DRIFT_MS;
+    const maxWall = remoteOk
+      ? Math.max(nowMs, this.wall_ms, remote.wall_ms)
+      : Math.max(nowMs, this.wall_ms);
+    if (remoteOk && maxWall === this.wall_ms && maxWall === remote.wall_ms) {
       this.counter = Math.max(this.counter, remote.counter) + 1;
     } else if (maxWall === this.wall_ms) {
       this.counter += 1;
-    } else if (maxWall === remote.wall_ms) {
+    } else if (remoteOk && maxWall === remote.wall_ms) {
       this.counter = remote.counter + 1;
     } else {
       this.counter = 0;

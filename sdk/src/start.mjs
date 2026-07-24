@@ -41,6 +41,7 @@ export async function startSync(opts) {
     writeMode: opts.writeMode,
     errorPolicy: opts.errorPolicy,
     conflictResolution: opts.conflictResolution,
+    tables: opts.tables,
   });
 
   const hydrateAll = async () => {
