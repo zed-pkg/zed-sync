@@ -24,6 +24,11 @@ pub struct Hlc {
     pub actor: String,
 }
 
+/// Reject a remote stamp whose wall clock runs more than this far ahead of ours
+/// (5 minutes). Without the bound one attacker-controlled far-future `wall_ms`
+/// would permanently poison the clock and win every LAST_WRITE_WINS conflict.
+pub const MAX_DRIFT_MS: u64 = 300_000;
+
 impl Hlc {
     pub fn new(wall_ms: u64, counter: u32, actor: impl Into<String>) -> Self {
         Self {
