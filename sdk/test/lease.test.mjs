@@ -209,6 +209,39 @@ test("withSyncLease releases even when fn throws", async () => {
   assert.equal(handle.releaseCalls, 1);
 });
 
+test("release during an in-flight renew does not re-arm the heartbeat", async () => {
+  let releaseRenew;
+  let renewCalls = 0;
+  const handle = makeHandle({
+    renew: () =>
+      new Promise((resolve) => {
+        renewCalls += 1;
+        releaseRenew = resolve; // hold the renew open until we release
+      }),
+  });
+  const lost = [];
+  const client = makeClient({ lock: () => handle });
+  const lease = new SyncLease({
+    client,
+    key: "k",
+    ttlMs: 60,
+    renewIntervalMs: 15,
+    onLost: (err) => lost.push(err),
+  });
+  await lease.acquire();
+  await sleep(25); // let the first heartbeat fire and block inside renew()
+  assert.equal(renewCalls, 1);
+
+  // Release while that renew is still pending, then let it resolve.
+  await lease.release();
+  releaseRenew?.({});
+  await sleep(40);
+
+  assert.equal(lease.held, false);
+  assert.equal(handle.renewCalls, 1, "no heartbeat re-armed after release");
+  assert.equal(lost.length, 0, "a clean release must not surface as a loss");
+});
+
 test("release drops the grant even when the server release fails", async () => {
   const handle = makeHandle();
   handle.release = async () => {
