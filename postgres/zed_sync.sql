@@ -89,6 +89,30 @@ BEGIN
 END;
 $$;
 
+-- Auto-register the daily prune when pg_cron is installed, so a fresh apply
+-- actually bounds the outbox instead of relying on an operator remembering to
+-- schedule it. No-op (with a NOTICE) when pg_cron is absent — e.g. managed
+-- Postgres without the extension, or Supabase where you'd schedule it another
+-- way. Idempotent: cron.schedule upserts a job by name. Retention is
+-- ZED_SYNC_OUTBOX_RETAIN_DAYS-shaped but SQL has no env, so it defaults to
+-- 30 days; re-run with a different literal to change it. Concurrent runners
+-- are harmless (the DELETE row-locks; a second runner no-ops), so no
+-- single-runner lease is needed.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    PERFORM cron.schedule(
+      'zed-sync-prune-outbox',
+      '17 3 * * *',
+      $cron$ SELECT zed_sync.prune_outbox(interval '30 days') $cron$
+    );
+    RAISE NOTICE 'zed_sync: scheduled daily outbox prune via pg_cron (job zed-sync-prune-outbox)';
+  ELSE
+    RAISE NOTICE 'zed_sync: pg_cron not installed; call zed_sync.prune_outbox(interval ''30 days'') from your own scheduler to bound the outbox';
+  END IF;
+END;
+$$;
+
 -- Fencing registry for distributed leases (docs/leases.md). Fiducia's lock
 -- service hands each lease grant a monotonically increasing fencing token;
 -- tokens only protect anything if the resource they guard REJECTS writes
