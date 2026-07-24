@@ -67,6 +67,25 @@ test("a stamp taken after observe sorts after the observed remote stamp", () => 
   assert.equal(compareHlc(st, remote), 1);
 });
 
+test("observe clamps a MAX_SAFE_INTEGER remote wall — clock never advances past now+drift", () => {
+  const c = new Clock("dev");
+  c.tick(1000);
+  const now = 2000;
+  const st = c.observe({ wall_ms: Number.MAX_SAFE_INTEGER, counter: 0, actor: "attacker" }, now);
+  assert.ok(st.wall_ms <= now + MAX_DRIFT_MS, "did not advance past now + MAX_DRIFT_MS");
+  assert.equal(st.wall_ms, now, "advanced only to now, not the poisoned wall");
+  // The next local stamp still sorts before the rejected poison stamp.
+  assert.equal(compareHlc(c.tick(now), { wall_ms: Number.MAX_SAFE_INTEGER, counter: 0, actor: "attacker" }), -1);
+});
+
+test("observe accepts a stamp exactly at now+drift but rejects one just past it", () => {
+  const now = 1_000_000;
+  const edge = new Clock("dev").observe({ wall_ms: now + MAX_DRIFT_MS, counter: 0, actor: "b" }, now);
+  assert.equal(edge.wall_ms, now + MAX_DRIFT_MS, "edge stamp is accepted");
+  const past = new Clock("dev").observe({ wall_ms: now + MAX_DRIFT_MS + 1, counter: 0, actor: "b" }, now);
+  assert.equal(past.wall_ms, now, "one ms past the edge is rejected, falls back to now");
+});
+
 test("encodeHlc truncates the wall to 48 bits and the counter to 16", () => {
   assert.equal(encodeHlc({ wall_ms: 2 ** 48 + 5, counter: 0x10003, actor: "x" }), "000000000005-0003");
   assert.equal(encodeHlc({ wall_ms: 0, counter: 0, actor: "x" }), "000000000000-0000");
