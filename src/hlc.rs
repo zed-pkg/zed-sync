@@ -63,12 +63,17 @@ impl Hlc {
     /// stamps always sort after the last change we have seen (CockroachDB's
     /// `HLC.Update`).
     pub fn observe(&mut self, remote: &Hlc, physical_now_ms: u64) {
-        let max_wall = physical_now_ms.max(self.wall_ms).max(remote.wall_ms);
-        let counter = if max_wall == self.wall_ms && max_wall == remote.wall_ms {
+        // Clock-drift clamp: an over-drift remote wall is IGNORED (not folded in),
+        // so the local clock never advances past `physical_now_ms + MAX_DRIFT_MS`.
+        // In range, behavior is identical to the classic HLC update.
+        let remote_ok = remote.wall_ms <= physical_now_ms.saturating_add(MAX_DRIFT_MS);
+        let remote_wall = if remote_ok { remote.wall_ms } else { 0 };
+        let max_wall = physical_now_ms.max(self.wall_ms).max(remote_wall);
+        let counter = if remote_ok && max_wall == self.wall_ms && max_wall == remote.wall_ms {
             self.counter.max(remote.counter).saturating_add(1)
         } else if max_wall == self.wall_ms {
             self.counter.saturating_add(1)
-        } else if max_wall == remote.wall_ms {
+        } else if remote_ok && max_wall == remote.wall_ms {
             remote.counter.saturating_add(1)
         } else {
             0
