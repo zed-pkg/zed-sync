@@ -11,3 +11,4 @@ export 'src/hlc.dart';
 export 'src/policy.dart';
 export 'src/core.dart';
 export 'src/client.dart';
+export 'src/memory_storage.dart';
