@@ -21,3 +21,11 @@ export { decodeBackendFrame, decodeSupabaseChange } from "./transports/decode.mj
 export { startSupabase } from "./transports/supabase.mjs";
 export { makeBackendSender, startBackendStream } from "./transports/backend.mjs";
 export { startSync } from "./start.mjs";
+export {
+  SyncLease,
+  withSyncLease,
+  flusherLeaseKey,
+  LeaseLostError,
+  LeaseTimeoutError,
+  DEFAULT_LEASE_TTL_MS,
+} from "./lease.mjs";
