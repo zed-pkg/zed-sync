@@ -183,59 +183,6 @@ export function startBackendStream(opts: {
   onStatus?: (status: string) => void;
   WebSocketImpl?: typeof WebSocket;
 }): { stop(): void };
-// --- distributed single-flusher lease (lease.mjs, docs/leases.md) -----------
-
-/** Handle contract the injected lock client must return (FiduciaLockClient shape). */
-export interface LeaseLockHandle {
-  fencingToken: number;
-  leaseExpiresMs?: number;
-  renew(ttlMs?: number): Promise<unknown>;
-  release(): Promise<unknown>;
-}
-/** Injected lock client contract — @fiducia/client's FiduciaLockClient satisfies it. */
-export interface LeaseLockClient {
-  lock(
-    key: string,
-    opts: { ttl?: number; holder?: string; maxWaitTime?: number; signal?: AbortSignal },
-  ): Promise<LeaseLockHandle>;
-  tryLock(key: string, opts: { ttl?: number; holder?: string }): Promise<LeaseLockHandle | null>;
-}
-
-export const DEFAULT_LEASE_TTL_MS: number;
-export function flusherLeaseKey(dbName: string, actor: string): string;
-export class LeaseTimeoutError extends Error {
-  key: string;
-  waitedMs: number;
-}
-export class LeaseLostError extends Error {
-  key: string;
-}
-
-export interface SyncLeaseOptions {
-  client: LeaseLockClient;
-  key: string;
-  ttlMs?: number;
-  renewIntervalMs?: number;
-  /** Must be unique PER INSTANCE — a shared holder id defeats mutual exclusion. */
-  holder?: string;
-  renewFailureLimit?: number;
-  onLost?: (err: LeaseLostError) => void;
-  onRenewError?: (err: unknown, consecutiveFailures: number) => void;
-}
-export class SyncLease {
-  constructor(opts: SyncLeaseOptions);
-  readonly held: boolean;
-  readonly fencingToken: number | null;
-  readonly leaseExpiresMs: number | null;
-  key: string;
-  acquire(opts?: { maxWaitMs?: number; signal?: AbortSignal }): Promise<this>;
-  tryAcquire(): Promise<boolean>;
-  release(): Promise<void>;
-}
-export function withSyncLease<T>(
-  opts: SyncLeaseOptions & { maxWaitMs?: number; signal?: AbortSignal },
-  fn: (lease: SyncLease) => Promise<T> | T,
-): Promise<T>;
 
 export function startSync(opts: {
   actor: string;
