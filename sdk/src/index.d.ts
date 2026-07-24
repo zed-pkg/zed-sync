@@ -171,6 +171,8 @@ export function startSupabase(opts: {
 export function makeBackendSender(opts: {
   baseUrl: string;
   getToken?: () => string | Promise<string>;
+  /** Current flusher-lease fencing grant, read per request (see SyncLease). */
+  getFence?: () => { key: string; token: number } | null;
   fetchImpl?: typeof fetch;
 }): (change: ChangeEvent) => Promise<{ committed_version: Hlc }>;
 export function startBackendStream(opts: {
