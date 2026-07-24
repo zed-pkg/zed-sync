@@ -67,7 +67,11 @@ export function makeOtelTelemetry({ tracer, meter, logger } = {}) {
       eventCounter?.add(1, { event: name });
       if (isError) errorCounter?.add(1, { event: name });
       if (tracer) {
-        const span = tracer.startSpan(name, { attributes: flatten(attrs) });
+        const flat = flatten(attrs);
+        const span = tracer.startSpan(name, { attributes: flat });
+        // Also set post-creation: span processors and tracer wrappers that
+        // ignore start options still see the attributes.
+        span.setAttributes?.(flat);
         if (isError) {
           span.recordException?.(error instanceof Error ? error : new Error(String(error)));
           span.setStatus?.({ code: 2, message: String(error?.message ?? error) }); // ERROR
