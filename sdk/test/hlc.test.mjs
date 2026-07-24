@@ -2,7 +2,7 @@
 // stateful parts of hlc.mjs the pure-compare conformance fixture cannot cover.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Clock, compareHlc, encodeHlc } from "../src/hlc.mjs";
+import { Clock, compareHlc, encodeHlc, MAX_DRIFT_MS } from "../src/hlc.mjs";
 
 test("tick advances with the wall clock and resets the counter", () => {
   const c = new Clock("dev");
