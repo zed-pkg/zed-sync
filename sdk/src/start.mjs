@@ -135,10 +135,24 @@ export async function startSync(opts) {
   }
   await hydrateAll();
 
+  // A freshly promoted flusher inherits whatever the previous holder left
+  // queued in the shared store; drain it now rather than waiting for the next
+  // reconnect. EMIT_ONLY: a flush failure must not fail startup — the queue
+  // is retried on reconnect as usual.
+  if (lease && (opts.lease.flushOnAcquire ?? true) && opts.backend) {
+    try {
+      await client.flushQueue(ErrorPolicy.EMIT_ONLY);
+    } catch {
+      // EMIT_ONLY never throws; belt-and-suspenders for custom policies
+    }
+  }
+
   return {
     client,
+    lease,
     stop() {
-      for (const s of stoppers) s.stop();
+      stopTransports();
+      if (lease) void lease.release();
     },
   };
 }
