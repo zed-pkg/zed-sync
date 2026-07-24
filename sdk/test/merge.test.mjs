@@ -52,10 +52,7 @@ test("class instances replace wholesale in either position, never spread", () =>
 test("null-prototype objects (JSON-ish data) still recurse", () => {
   const base = Object.assign(Object.create(null), { keep: 1, nested: Object.assign(Object.create(null), { x: 1 }) });
   const patch = Object.assign(Object.create(null), { nested: Object.assign(Object.create(null), { y: 2 }) });
-  assert.deepEqual({ ...deepMerge(base, patch), nested: { ...deepMerge(base, patch).nested } }, {
-    keep: 1,
-    nested: { x: 1, y: 2 },
-  });
+  assert.deepEqual(deepMerge(base, patch), { keep: 1, nested: { x: 1, y: 2 } });
 });
 
 test("empty patch returns an equal copy, not the base reference", () => {
