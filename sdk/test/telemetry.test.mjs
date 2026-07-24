@@ -109,11 +109,11 @@ test("makeOtelTelemetry records spans and counts error events", () => {
 test("makeOtelTelemetry flattens nested and null attribute values without throwing", () => {
   const recorded = [];
   const tracer = {
-    startSpan() {
+    startSpan(_name, options) {
+      recorded.push(options?.attributes ?? {});
       return {
         setStatus() {},
         recordException() {},
-        setAttributes: (a) => recorded.push(a),
         end() {},
       };
     },
@@ -127,14 +127,13 @@ test("makeOtelTelemetry flattens nested and null attribute values without throwi
       list: [1, 2, 3],
     }),
   );
-  // Whatever the flattening scheme, attribute values must be OTel-safe
-  // primitives (or arrays of them), never a raw nested object or null.
+  // Whatever the flattening scheme, attribute values handed to OTel must be
+  // safe primitives (or arrays), never a raw nested object or a bare null.
   assert.equal(recorded.length, 1);
-  for (const value of Object.values(recorded[0])) {
-    const ok =
-      value === undefined ||
-      ["string", "number", "boolean"].includes(typeof value) ||
-      Array.isArray(value);
-    assert.ok(ok, `attribute value not OTel-safe: ${JSON.stringify(value)}`);
+  const attrs = recorded[0];
+  assert.equal(attrs.outcome, "applied", "primitives pass through unchanged");
+  for (const value of Object.values(attrs)) {
+    const ok = ["string", "number", "boolean"].includes(typeof value) || Array.isArray(value);
+    assert.ok(ok, `attribute value not OTel-safe: ${JSON.stringify(value)} (${typeof value})`);
   }
 });
