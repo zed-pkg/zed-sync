@@ -134,6 +134,7 @@ export class SyncLease {
       for (;;) {
         const budget = deadline === null ? ATTEMPT_WAIT_MS : deadline - Date.now();
         if (budget <= 0) throw new LeaseTimeoutError(this.key, Date.now() - started);
+        const attemptStarted = Date.now();
         let handle;
         try {
           handle = await this.client.lock(this.key, {
@@ -144,8 +145,20 @@ export class SyncLease {
           });
         } catch (err) {
           // A per-attempt timeout just means "still queued" — keep waiting
-          // unless the caller's overall budget or signal says stop.
-          if (err?.name === "LockTimeoutError" && !signal?.aborted) continue;
+          // unless the caller's overall budget or signal says stop. A
+          // well-behaved client waits `maxWaitTime` before throwing; pace a
+          // client that timed out suspiciously fast so this loop can't spin.
+          if (err?.name === "LockTimeoutError" && !signal?.aborted) {
+            const elapsed = Date.now() - attemptStarted;
+            if (elapsed < RETRY_FLOOR_MS) {
+              const pause = Math.min(
+                RETRY_FLOOR_MS - elapsed,
+                deadline === null ? Infinity : Math.max(0, deadline - Date.now()),
+              );
+              if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
+            }
+            continue;
+          }
           throw err;
         }
         this._adopt(handle);
