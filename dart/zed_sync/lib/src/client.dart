@@ -176,6 +176,16 @@ class SyncClient {
     }
   }
 
+  /// Delete convenience — an optimistic delete (null payload) through the same
+  /// queue path as [write]. Mirrors the JS client's delete().
+  Future<WriteResult> delete(
+    String table,
+    String id, {
+    WriteMode? mode,
+    ErrorPolicy? policy,
+  }) =>
+      write(table, id, null, op: Op.delete, mode: mode, policy: policy);
+
   Future<Hlc> _doSend(ChangeEvent change) {
     final s = send;
     if (s == null) throw StateError('no send transport configured');
