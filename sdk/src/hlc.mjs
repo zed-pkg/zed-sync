@@ -4,6 +4,11 @@
 
 /** @typedef {{ wall_ms: number, counter: number, actor: string }} Hlc */
 
+/** Reject a remote stamp whose wall clock runs more than this far ahead of ours
+ * (5 minutes). Without the bound one attacker-controlled far-future `wall_ms`
+ * would permanently poison the clock and win every LAST_WRITE_WINS conflict. */
+export const MAX_DRIFT_MS = 300_000;
+
 /** Total order: wall_ms, then counter, then actor. @param {Hlc} a @param {Hlc} b */
 export function compareHlc(a, b) {
   if (a.wall_ms !== b.wall_ms) return a.wall_ms < b.wall_ms ? -1 : 1;
