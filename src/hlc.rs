@@ -24,6 +24,11 @@ pub struct Hlc {
     pub actor: String,
 }
 
+/// Reject a remote stamp whose wall clock runs more than this far ahead of ours
+/// (5 minutes). Without the bound one attacker-controlled far-future `wall_ms`
+/// would permanently poison the clock and win every LAST_WRITE_WINS conflict.
+pub const MAX_DRIFT_MS: u64 = 300_000;
+
 impl Hlc {
     pub fn new(wall_ms: u64, counter: u32, actor: impl Into<String>) -> Self {
         Self {
@@ -58,12 +63,17 @@ impl Hlc {
     /// stamps always sort after the last change we have seen (CockroachDB's
     /// `HLC.Update`).
     pub fn observe(&mut self, remote: &Hlc, physical_now_ms: u64) {
-        let max_wall = physical_now_ms.max(self.wall_ms).max(remote.wall_ms);
-        let counter = if max_wall == self.wall_ms && max_wall == remote.wall_ms {
+        // Clock-drift clamp: an over-drift remote wall is IGNORED (not folded in),
+        // so the local clock never advances past `physical_now_ms + MAX_DRIFT_MS`.
+        // In range, behavior is identical to the classic HLC update.
+        let remote_ok = remote.wall_ms <= physical_now_ms.saturating_add(MAX_DRIFT_MS);
+        let remote_wall = if remote_ok { remote.wall_ms } else { 0 };
+        let max_wall = physical_now_ms.max(self.wall_ms).max(remote_wall);
+        let counter = if remote_ok && max_wall == self.wall_ms && max_wall == remote.wall_ms {
             self.counter.max(remote.counter).saturating_add(1)
         } else if max_wall == self.wall_ms {
             self.counter.saturating_add(1)
-        } else if max_wall == remote.wall_ms {
+        } else if remote_ok && max_wall == remote.wall_ms {
             remote.counter.saturating_add(1)
         } else {
             0
@@ -109,6 +119,30 @@ mod tests {
         let remote = Hlc::new(3000, 2, "b");
         local.observe(&remote, 1200);
         assert!(local > remote);
+    }
+
+    #[test]
+    fn observe_clamps_a_far_future_remote_wall() {
+        // An attacker-controlled far-future stamp must NOT advance the local clock
+        // past now + MAX_DRIFT_MS.
+        let mut local = Hlc::new(1_000, 0, "a");
+        let now = 2_000;
+        let poison = Hlc::new(u64::MAX, 0, "attacker");
+        local.observe(&poison, now);
+        assert!(local.wall_ms <= now + MAX_DRIFT_MS);
+        assert_eq!(local.wall_ms, now, "advanced to now, not the poisoned wall");
+        // A subsequent local tick still sorts before the (rejected) poison stamp.
+        assert!(local < poison);
+    }
+
+    #[test]
+    fn observe_still_folds_an_in_range_remote() {
+        // A remote a few ms ahead (within drift) is folded in as before.
+        let mut local = Hlc::new(1_000, 5, "a");
+        let remote = Hlc::new(1_050, 2, "b");
+        local.observe(&remote, 1_000);
+        assert_eq!(local.wall_ms, 1_050);
+        assert_eq!(local.counter, 3);
     }
 
     #[test]

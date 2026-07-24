@@ -3,7 +3,7 @@
 // no-auth parity. Frame decoding is covered separately in decode.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { startBackendStream } from "../src/transports/backend.mjs";
+import { startBackendStream, makeBackendSender } from "../src/transports/backend.mjs";
 
 /** A minimal fake WebSocket that records the URL it was opened with. */
 function fakeWs(urls) {
@@ -57,4 +57,17 @@ test("resolves an async getToken per connect", async () => {
   await flush();
   stream.stop();
   assert.deepEqual(urls, ["wss://api.example.com/ws?access_token=tok-async"]);
+});
+
+test("makeBackendSender url-encodes the table name in the write path", async () => {
+  const calls = [];
+  const send = makeBackendSender({
+    baseUrl: "https://api.example.com/",
+    fetchImpl: async (url) => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ committed_version: {} }) };
+    },
+  });
+  await send({ table: "weird/table name", id: "1", write_key: "k1", version: {} });
+  assert.equal(calls[0], "https://api.example.com/api/sync/weird%2Ftable%20name");
 });

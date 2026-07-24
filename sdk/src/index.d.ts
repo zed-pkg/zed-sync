@@ -58,6 +58,8 @@ export function assertConflictResolution(resolution: string): ConflictResolution
 
 export function compareHlc(a: Hlc, b: Hlc): -1 | 0 | 1;
 export function encodeHlc(h: Hlc): string;
+/** Reject a remote stamp whose wall clock runs more than this far ahead (ms). */
+export const MAX_DRIFT_MS: number;
 export class Clock {
   constructor(actor: string);
   actor: string;
@@ -95,7 +97,12 @@ export interface Store {
   getCursor(scope: string): Promise<{ cursor: string; lastSyncedAtMs: number } | null>;
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
+/** Default upper bound on the durable write-queue length. */
+export const DEFAULT_MAX_QUEUE_LENGTH: number;
 export class MemoryStore implements Store {
+  constructor(opts?: { maxQueueLength?: number });
+  maxQueueLength: number;
+  onOverflow: ((dropped: Record<string, unknown>) => void) | null;
   getRow(table: string, id: string): Promise<{ row: unknown; meta: RowMeta } | null>;
   putRow(table: string, id: string, row: unknown, meta: RowMeta): Promise<void>;
   removeRow(table: string, id: string, meta: RowMeta): Promise<void>;
@@ -106,7 +113,9 @@ export class MemoryStore implements Store {
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
 export class IndexedDbStore implements Store {
-  static open(dbName?: string, idb?: IDBFactory): Promise<IndexedDbStore>;
+  static open(dbName?: string, idb?: IDBFactory, opts?: { maxQueueLength?: number }): Promise<IndexedDbStore>;
+  maxQueueLength: number;
+  onOverflow: ((dropped: Record<string, unknown>) => void) | null;
   getRow(table: string, id: string): Promise<{ row: unknown; meta: RowMeta } | null>;
   putRow(table: string, id: string, row: unknown, meta: RowMeta): Promise<void>;
   removeRow(table: string, id: string, meta: RowMeta): Promise<void>;
@@ -137,6 +146,7 @@ export class SyncClient {
     writeMode?: WriteModeValue;
     errorPolicy?: ErrorPolicyValue;
     conflictResolution?: ConflictResolutionValue;
+    tables?: string[];
     onError?: (err: unknown, ctx: Record<string, unknown>) => void;
   });
   actor: string;
@@ -161,6 +171,8 @@ export function startSupabase(opts: {
 export function makeBackendSender(opts: {
   baseUrl: string;
   getToken?: () => string | Promise<string>;
+  /** Current flusher-lease fencing grant, read per request (see SyncLease). */
+  getFence?: () => { key: string; token: number } | null;
   fetchImpl?: typeof fetch;
 }): (change: ChangeEvent) => Promise<{ committed_version: Hlc }>;
 export function startBackendStream(opts: {
@@ -173,6 +185,61 @@ export function startBackendStream(opts: {
   onStatus?: (status: string) => void;
   WebSocketImpl?: typeof WebSocket;
 }): { stop(): void };
+
+// --- distributed single-flusher lease (lease.mjs, docs/leases.md) -----------
+
+/** Handle contract the injected lock client must return (FiduciaLockClient shape). */
+export interface LeaseLockHandle {
+  fencingToken: number;
+  leaseExpiresMs?: number;
+  renew(ttlMs?: number): Promise<unknown>;
+  release(): Promise<unknown>;
+}
+/** Injected lock client contract — @fiducia/client's FiduciaLockClient satisfies it. */
+export interface LeaseLockClient {
+  lock(
+    key: string,
+    opts: { ttl?: number; holder?: string; maxWaitTime?: number; signal?: AbortSignal },
+  ): Promise<LeaseLockHandle>;
+  tryLock(key: string, opts: { ttl?: number; holder?: string }): Promise<LeaseLockHandle | null>;
+}
+
+export const DEFAULT_LEASE_TTL_MS: number;
+export function flusherLeaseKey(dbName: string, actor: string): string;
+export class LeaseTimeoutError extends Error {
+  key: string;
+  waitedMs: number;
+}
+export class LeaseLostError extends Error {
+  key: string;
+}
+
+export interface SyncLeaseOptions {
+  client: LeaseLockClient;
+  key: string;
+  ttlMs?: number;
+  renewIntervalMs?: number;
+  /** Must be unique PER INSTANCE — a shared holder id defeats mutual exclusion. */
+  holder?: string;
+  renewFailureLimit?: number;
+  onLost?: (err: LeaseLostError) => void;
+  onRenewError?: (err: unknown, consecutiveFailures: number) => void;
+}
+export class SyncLease {
+  constructor(opts: SyncLeaseOptions);
+  readonly held: boolean;
+  readonly fencingToken: number | null;
+  readonly leaseExpiresMs: number | null;
+  key: string;
+  acquire(opts?: { maxWaitMs?: number; signal?: AbortSignal }): Promise<this>;
+  tryAcquire(): Promise<boolean>;
+  release(): Promise<void>;
+}
+export function withSyncLease<T>(
+  opts: SyncLeaseOptions & { maxWaitMs?: number; signal?: AbortSignal },
+  fn: (lease: SyncLease) => Promise<T> | T,
+): Promise<T>;
+
 export function startSync(opts: {
   actor: string;
   tables: string[];
@@ -185,4 +252,14 @@ export function startSync(opts: {
   backend?: { baseUrl: string; wsPath?: string; getToken?: () => string | Promise<string> };
   supabase?: { client: unknown; filter?: string; schema?: string };
   hydrateFetch?: (table: string) => Promise<ChangeEvent[]>;
-}): Promise<{ client: SyncClient; stop(): void }>;
+  lease?: {
+    client: LeaseLockClient;
+    key?: string;
+    ttlMs?: number;
+    renewIntervalMs?: number;
+    holder?: string;
+    maxWaitMs?: number;
+    flushOnAcquire?: boolean;
+    onLost?: (err: LeaseLostError) => void;
+  };
+}): Promise<{ client: SyncClient; lease: SyncLease | null; stop(): void }>;
