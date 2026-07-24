@@ -122,6 +122,30 @@ mod tests {
     }
 
     #[test]
+    fn observe_clamps_a_far_future_remote_wall() {
+        // An attacker-controlled far-future stamp must NOT advance the local clock
+        // past now + MAX_DRIFT_MS.
+        let mut local = Hlc::new(1_000, 0, "a");
+        let now = 2_000;
+        let poison = Hlc::new(u64::MAX, 0, "attacker");
+        local.observe(&poison, now);
+        assert!(local.wall_ms <= now + MAX_DRIFT_MS);
+        assert_eq!(local.wall_ms, now, "advanced to now, not the poisoned wall");
+        // A subsequent local tick still sorts before the (rejected) poison stamp.
+        assert!(local < poison);
+    }
+
+    #[test]
+    fn observe_still_folds_an_in_range_remote() {
+        // A remote a few ms ahead (within drift) is folded in as before.
+        let mut local = Hlc::new(1_000, 5, "a");
+        let remote = Hlc::new(1_050, 2, "b");
+        local.observe(&remote, 1_000);
+        assert_eq!(local.wall_ms, 1_050);
+        assert_eq!(local.counter, 3);
+    }
+
+    #[test]
     fn encoding_sorts_lexicographically_by_causal_order() {
         let a = Hlc::new(1, 0, "z").encode();
         let b = Hlc::new(1, 1, "a").encode();
