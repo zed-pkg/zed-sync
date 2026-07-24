@@ -95,7 +95,7 @@ export function startBackendStream({
     };
     ws.onerror = () => ws?.close();
   };
-  connect();
+  void connect();
 
   return {
     stop() {
