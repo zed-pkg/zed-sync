@@ -167,6 +167,8 @@ export function startBackendStream(opts: {
   baseUrl: string;
   sync: SyncClient;
   wsPath?: string;
+  token?: string;
+  getToken?: () => string | Promise<string>;
   onReconnect?: () => Promise<void>;
   onStatus?: (status: string) => void;
   WebSocketImpl?: typeof WebSocket;
