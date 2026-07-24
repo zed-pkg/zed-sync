@@ -89,6 +89,60 @@ BEGIN
 END;
 $$;
 
+-- Fencing registry for distributed leases (docs/leases.md). Fiducia's lock
+-- service hands each lease grant a monotonically increasing fencing token;
+-- tokens only protect anything if the resource they guard REJECTS writes
+-- carrying a token older than one it has already seen (Kleppmann fencing).
+-- This table is that memory: one row per lease key, holding the highest
+-- token that has ever written here.
+CREATE TABLE IF NOT EXISTS zed_sync.fence (
+  lease_key     text PRIMARY KEY CHECK (length(lease_key) BETWEEN 1 AND 512),
+  fencing_token bigint NOT NULL CHECK (fencing_token > 0),
+  holder        text CHECK (holder IS NULL OR length(holder) BETWEEN 1 AND 512),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- Assert the caller still holds fenced authority for lease_key. Call INSIDE
+-- the same transaction as the writes the lease protects (e.g. per sync write
+-- batch), so the check and the writes commit or abort together:
+--
+--   SELECT zed_sync.assert_fence('zed-sync/flusher/appdb/actor-1', $token, $holder);
+--
+-- Same-or-higher tokens are accepted (renewals preserve the token; a newer
+-- grant advances it). A LOWER token than the stored one means the caller's
+-- lease was superseded while it was paused/partitioned: the function raises
+-- SQLSTATE 'ZSF01' and the transaction aborts. Map that to HTTP 412 in the
+-- service so the stale flusher stops instead of retrying. The upsert
+-- row-locks the fence row, so concurrent writers for one lease serialize.
+CREATE OR REPLACE FUNCTION zed_sync.assert_fence(p_lease_key text, p_token bigint, p_holder text DEFAULT NULL)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  advanced integer;
+  seen bigint;
+BEGIN
+  IF p_lease_key IS NULL OR length(p_lease_key) = 0 THEN
+    RAISE EXCEPTION 'zed_sync.assert_fence: lease_key is required' USING ERRCODE = '22023';
+  END IF;
+  IF p_token IS NULL OR p_token <= 0 THEN
+    RAISE EXCEPTION 'zed_sync.assert_fence: invalid fencing token %', p_token USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO zed_sync.fence AS f (lease_key, fencing_token, holder)
+  VALUES (p_lease_key, p_token, p_holder)
+  ON CONFLICT (lease_key) DO UPDATE
+    SET fencing_token = EXCLUDED.fencing_token,
+        holder        = EXCLUDED.holder,
+        updated_at    = now()
+    WHERE f.fencing_token <= EXCLUDED.fencing_token;
+  GET DIAGNOSTICS advanced = ROW_COUNT;
+  IF advanced = 0 THEN
+    SELECT fencing_token INTO seen FROM zed_sync.fence WHERE lease_key = p_lease_key;
+    RAISE EXCEPTION 'zed_sync: stale fencing token % for lease % (current %)',
+      p_token, p_lease_key, seen
+      USING ERRCODE = 'ZSF01';
+  END IF;
+END;
+$$;
+
 -- Compute the next HLC given the previous one and the (monotonic) updated_at.
 CREATE OR REPLACE FUNCTION zed_sync.next_hlc(prev jsonb, updated timestamptz)
 RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
