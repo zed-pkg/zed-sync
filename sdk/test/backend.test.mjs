@@ -58,3 +58,16 @@ test("resolves an async getToken per connect", async () => {
   stream.stop();
   assert.deepEqual(urls, ["wss://api.example.com/ws?access_token=tok-async"]);
 });
+
+test("makeBackendSender url-encodes the table name in the write path", async () => {
+  const calls = [];
+  const send = makeBackendSender({
+    baseUrl: "https://api.example.com/",
+    fetchImpl: async (url) => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ committed_version: {} }) };
+    },
+  });
+  await send({ table: "weird/table name", id: "1", write_key: "k1", version: {} });
+  assert.equal(calls[0], "https://api.example.com/api/sync/weird%2Ftable%20name");
+});
