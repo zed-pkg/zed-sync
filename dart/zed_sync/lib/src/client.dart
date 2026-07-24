@@ -77,6 +77,7 @@ class SyncClient {
   void _emit(String event, [Map<String, dynamic> attrs = const {}]) => telemetry?.call(event, attrs);
 
   /// Apply an incoming change (from either transport) through reconcile.
+  /// Returns "applied" | "ignored" | "conflict-resolved" | "refreshed".
   Future<String> applyChange(ChangeEvent incoming) async {
     _clock.observe(incoming.version);
     final existing = await storage.getRow(incoming.table, incoming.id);
