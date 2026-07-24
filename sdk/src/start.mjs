@@ -4,8 +4,6 @@
 
 import { SyncClient } from "./client.mjs";
 import { IndexedDbStore, MemoryStore } from "./store.mjs";
-import { SyncLease, flusherLeaseKey } from "./lease.mjs";
-import { ErrorPolicy } from "./policy.mjs";
 import { makeBackendSender, startBackendStream } from "./transports/backend.mjs";
 import { startSupabase } from "./transports/supabase.mjs";
 
@@ -22,21 +20,7 @@ import { startSupabase } from "./transports/supabase.mjs";
  * @param {{ baseUrl: string, wsPath?: string, getToken?: () => string|Promise<string> }} [opts.backend]
  * @param {{ client: object, filter?: string, schema?: string }} [opts.supabase]
  * @param {(table: string) => Promise<object[]>} [opts.hydrateFetch]
- * @param {{
- *   client: object,
- *   key?: string,
- *   ttlMs?: number,
- *   renewIntervalMs?: number,
- *   holder?: string,
- *   maxWaitMs?: number,
- *   flushOnAcquire?: boolean,
- *   onLost?: (err: Error) => void,
- * }} [opts.lease]  single-flusher lease (docs/leases.md): startSync blocks until
- *   this instance holds `zed-sync/flusher/{dbName}/{actor}` before starting
- *   transports/hydration, flushes the inherited queue on promotion, and stops
- *   the transports if the lease is lost. `client` is a FiduciaLockClient-shaped
- *   object (see lease.mjs); leave `holder` unset unless unique per process.
- * @returns {Promise<{ client: SyncClient, lease: SyncLease|null, stop(): void }>}
+ * @returns {Promise<{ client: SyncClient, stop(): void }>}
  */
 export async function startSync(opts) {
   const store =
@@ -73,36 +57,6 @@ export async function startSync(opts) {
 
   /** @type {Array<{ stop(): void }>} */
   const stoppers = [];
-  const stopTransports = () => {
-    for (const s of stoppers.splice(0)) s.stop();
-  };
-
-  // Single-flusher lease: block until this instance is the elected flusher
-  // BEFORE any transport, hydration, or flush touches the shared store. On
-  // loss of authority the transports stop — local writes keep queueing and a
-  // promoted instance (possibly this one, re-elected by the app) drains them.
-  /** @type {SyncLease|null} */
-  let lease = null;
-  if (opts.lease) {
-    lease = new SyncLease({
-      client: opts.lease.client,
-      key: opts.lease.key ?? flusherLeaseKey(opts.dbName ?? "zed-sync", opts.actor),
-      ttlMs: opts.lease.ttlMs,
-      renewIntervalMs: opts.lease.renewIntervalMs,
-      holder: opts.lease.holder,
-      onLost: (err) => {
-        stopTransports();
-        client.telemetry.event("sync.lease.lost", { key: lease.key, error: err });
-        opts.lease.onLost?.(err);
-      },
-    });
-    await lease.acquire({ maxWaitMs: opts.lease.maxWaitMs });
-    client.telemetry.event("sync.lease.acquired", {
-      key: lease.key,
-      fencing_token: lease.fencingToken,
-    });
-  }
-
   if (opts.backend) {
     stoppers.push(
       startBackendStream({
@@ -127,24 +81,10 @@ export async function startSync(opts) {
   }
   await hydrateAll();
 
-  // A freshly promoted flusher inherits whatever the previous holder left
-  // queued in the shared store; drain it now rather than waiting for the next
-  // reconnect. EMIT_ONLY: a flush failure must not fail startup — the queue
-  // is retried on reconnect as usual.
-  if (lease && (opts.lease.flushOnAcquire ?? true) && opts.backend) {
-    try {
-      await client.flushQueue(ErrorPolicy.EMIT_ONLY);
-    } catch {
-      // EMIT_ONLY never throws; belt-and-suspenders for custom policies
-    }
-  }
-
   return {
     client,
-    lease,
     stop() {
-      stopTransports();
-      if (lease) void lease.release();
+      for (const s of stoppers) s.stop();
     },
   };
 }
