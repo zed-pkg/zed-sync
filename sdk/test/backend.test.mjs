@@ -3,7 +3,7 @@
 // no-auth parity. Frame decoding is covered separately in decode.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { startBackendStream } from "../src/transports/backend.mjs";
+import { startBackendStream, makeBackendSender } from "../src/transports/backend.mjs";
 
 /** A minimal fake WebSocket that records the URL it was opened with. */
 function fakeWs(urls) {
