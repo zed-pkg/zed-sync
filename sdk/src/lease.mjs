@@ -231,9 +231,14 @@ export class SyncLease {
     if (!handle) return;
     try {
       await handle.renew(this.ttlMs);
+      // release()/_markLost() may have landed during the awaited renew; only
+      // re-arm if this beat still owns the live grant, or it would leak a
+      // timer on a released lease (and renew a handle we no longer hold).
+      if (this._handle !== handle) return;
       this._failures = 0;
       this._schedule(this.renewIntervalMs);
     } catch (err) {
+      if (this._handle !== handle) return; // superseded mid-renew; stay quiet
       this._failures += 1;
       this.onRenewError?.(err, this._failures);
       const authorityLost = AUTHORITY_LOST_RE.test(String(err?.message ?? err));
