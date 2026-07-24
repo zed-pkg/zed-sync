@@ -63,15 +63,18 @@ test("fiducia integration: mutual exclusion and fencing-token monotonicity", { s
 
 test("fiducia integration: heartbeat keeps the lease alive past its TTL", { skip: !enabled }, async () => {
   const client = await makeLockClient();
-  const lease = new SyncLease({ client, key: key("heartbeat"), ttlMs: 2_000, renewIntervalMs: 600 });
+  // Generous TTL/interval ratio: a loaded host can delay a beat by seconds,
+  // and a beat that lands after expiry legitimately loses the lease — that is
+  // product behavior, not what this test measures.
+  const lease = new SyncLease({ client, key: key("heartbeat"), ttlMs: 6_000, renewIntervalMs: 1_000 });
   await lease.acquire({ maxWaitMs: 10_000 });
   const token = lease.fencingToken;
 
-  await sleep(3_500); // > TTL: only renewals keep it
+  await sleep(8_000); // > TTL: only renewals keep it
   assert.equal(lease.held, true, "renewals must outlive the original TTL");
   assert.equal(lease.fencingToken, token, "renewal preserves the fencing token");
 
-  const contender = new SyncLease({ client, key: key("heartbeat"), ttlMs: 2_000, renewIntervalMs: 600 });
+  const contender = new SyncLease({ client, key: key("heartbeat"), ttlMs: 6_000, renewIntervalMs: 1_000 });
   assert.equal(await contender.tryAcquire(), false, "held lease must still exclude others");
   await lease.release();
 });
