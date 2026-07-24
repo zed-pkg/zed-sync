@@ -87,6 +87,15 @@ export class SyncClient {
    * @returns {Promise<"applied"|"ignored"|"conflict-resolved"|"refreshed">}
    */
   async applyChange(incoming) {
+    // Table allowlist: drop a change for a table this client was not configured to
+    // sync. Rejected BEFORE folding the stamp into the clock so a non-allowlisted
+    // (and potentially hostile) stamp cannot advance/poison the local clock.
+    if (this.tables && !this.tables.has(incoming.table)) {
+      this.telemetry.event("sync.change.rejected", {
+        table: incoming.table, id: incoming.id, reason: "table-not-allowed",
+      });
+      return "ignored";
+    }
     this.clock.observe(incoming.version);
     const existing = await this.store.getRow(incoming.table, incoming.id);
     const local = existing ? { version: existing.meta.version, dirty: existing.meta.dirty } : null;
