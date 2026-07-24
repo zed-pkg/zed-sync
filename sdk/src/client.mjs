@@ -34,6 +34,7 @@ export class SyncClient {
    * @param {string} [deps.writeMode]          default WriteMode (enum)
    * @param {string} [deps.errorPolicy]        default ErrorPolicy (enum)
    * @param {string} [deps.conflictResolution] default ConflictResolution (enum)
+   * @param {string[]} [deps.tables]           incoming-change table allowlist; omit to allow all
    * @param {(err: unknown, ctx: object) => void} [deps.onError]
    */
   constructor({
@@ -44,6 +45,7 @@ export class SyncClient {
     writeMode = WriteMode.OPTIMISTIC_QUEUE,
     errorPolicy = ErrorPolicy.EMIT_ONLY,
     conflictResolution = ConflictResolution.SERVER_WINS,
+    tables,
     onError,
   }) {
     if (!store) throw new TypeError("SyncClient requires a store");
@@ -55,8 +57,19 @@ export class SyncClient {
     this.writeMode = assertWriteMode(writeMode);
     this.errorPolicy = assertErrorPolicy(errorPolicy);
     this.conflictResolution = assertConflictResolution(conflictResolution);
+    /** @type {Set<string>|null} allowlist of tables incoming changes may touch */
+    this.tables = tables ? new Set(tables) : null;
     this.onError = onError;
     this.clock = new Clock(actor);
+    // Route bounded-queue overflow drops through the configured error policy.
+    if (store && "onOverflow" in store) {
+      store.onOverflow = (dropped) =>
+        this.#surface(
+          new Error(`sync write queue overflow: dropped oldest queued write for ${dropped.table}/${dropped.id}`),
+          { table: dropped.table, id: dropped.id, op: dropped.op, reason: "queue-overflow" },
+          this.errorPolicy,
+        );
+    }
   }
 
   /** @param {unknown} err @param {object} ctx @param {string} policy */
