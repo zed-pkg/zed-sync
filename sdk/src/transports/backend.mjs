@@ -10,15 +10,26 @@ import { decodeBackendFrame } from "./decode.mjs";
  * @param {object} opts
  * @param {string} opts.baseUrl
  * @param {() => (string|Promise<string>)} [opts.getToken]
+ * @param {() => ({ key: string, token: number } | null)} [opts.getFence]
+ *   current flusher-lease fencing grant (src/lease.mjs), read per request.
+ *   When it returns a grant, the send carries x-zed-sync-lease-key and
+ *   x-zed-sync-fencing-token; the service must assert the token inside the
+ *   write transaction (zed_sync.assert_fence) so a superseded holder's
+ *   writes are rejected rather than applied.
  * @param {typeof fetch} [opts.fetchImpl]
  * @returns {(change: object) => Promise<{ committed_version: object }>}
  */
-export function makeBackendSender({ baseUrl, getToken, fetchImpl = fetch }) {
+export function makeBackendSender({ baseUrl, getToken, getFence, fetchImpl = fetch }) {
   const base = baseUrl.replace(/\/+$/, "");
   return async (change) => {
     /** @type {Record<string,string>} */
     const headers = { "content-type": "application/json", "idempotency-key": change.write_key };
     if (getToken) headers.authorization = `Bearer ${await getToken()}`;
+    const fence = getFence?.();
+    if (fence && fence.token != null) {
+      headers["x-zed-sync-lease-key"] = fence.key;
+      headers["x-zed-sync-fencing-token"] = String(fence.token);
+    }
     const res = await fetchImpl(`${base}/api/sync/${encodeURIComponent(change.table)}`, {
       method: "POST",
       headers,
