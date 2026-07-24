@@ -97,7 +97,12 @@ export interface Store {
   getCursor(scope: string): Promise<{ cursor: string; lastSyncedAtMs: number } | null>;
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
+/** Default upper bound on the durable write-queue length. */
+export const DEFAULT_MAX_QUEUE_LENGTH: number;
 export class MemoryStore implements Store {
+  constructor(opts?: { maxQueueLength?: number });
+  maxQueueLength: number;
+  onOverflow: ((dropped: Record<string, unknown>) => void) | null;
   getRow(table: string, id: string): Promise<{ row: unknown; meta: RowMeta } | null>;
   putRow(table: string, id: string, row: unknown, meta: RowMeta): Promise<void>;
   removeRow(table: string, id: string, meta: RowMeta): Promise<void>;
