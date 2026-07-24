@@ -4,6 +4,8 @@
 
 import { SyncClient } from "./client.mjs";
 import { IndexedDbStore, MemoryStore } from "./store.mjs";
+import { SyncLease, flusherLeaseKey } from "./lease.mjs";
+import { ErrorPolicy } from "./policy.mjs";
 import { makeBackendSender, startBackendStream } from "./transports/backend.mjs";
 import { startSupabase } from "./transports/supabase.mjs";
 
@@ -20,7 +22,22 @@ import { startSupabase } from "./transports/supabase.mjs";
  * @param {{ baseUrl: string, wsPath?: string, getToken?: () => string|Promise<string> }} [opts.backend]
  * @param {{ client: object, filter?: string, schema?: string }} [opts.supabase]
  * @param {(table: string) => Promise<object[]>} [opts.hydrateFetch]
- * @returns {Promise<{ client: SyncClient, stop(): void }>}
+ * @param {{
+ *   client: object,
+ *   key?: string,
+ *   ttlMs?: number,
+ *   renewIntervalMs?: number,
+ *   holder?: string,
+ *   maxWaitMs?: number,
+ *   flushOnAcquire?: boolean,
+ *   onLost?: (err: Error) => void,
+ * }} [opts.lease]  single-flusher lease (docs/leases.md): startSync blocks until
+ *   this instance holds `zed-sync/flusher/{dbName}/{actor}` before starting
+ *   transports/hydration, stamps every backend send with the grant's fencing
+ *   token, flushes the inherited queue on promotion, and stops the transports
+ *   if the lease is lost. `client` is a FiduciaLockClient-shaped object (see
+ *   lease.mjs); leave `holder` unset unless it is unique per process.
+ * @returns {Promise<{ client: SyncClient, lease: SyncLease|null, stop(): void }>}
  */
 export async function startSync(opts) {
   const store =
@@ -29,8 +46,17 @@ export async function startSync(opts) {
       ? await IndexedDbStore.open(opts.dbName ?? "zed-sync")
       : new MemoryStore());
 
+  /** @type {SyncLease|null} assigned below; the sender reads it per request */
+  let lease = null;
+
   const send = opts.backend
-    ? makeBackendSender({ baseUrl: opts.backend.baseUrl, getToken: opts.backend.getToken })
+    ? makeBackendSender({
+        baseUrl: opts.backend.baseUrl,
+        getToken: opts.backend.getToken,
+        getFence: opts.lease
+          ? () => (lease?.held ? { key: lease.key, token: lease.fencingToken } : null)
+          : undefined,
+      })
     : undefined;
 
   const client = new SyncClient({
