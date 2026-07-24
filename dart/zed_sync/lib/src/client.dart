@@ -77,6 +77,7 @@ class SyncClient {
   void _emit(String event, [Map<String, dynamic> attrs = const {}]) => telemetry?.call(event, attrs);
 
   /// Apply an incoming change (from either transport) through reconcile.
+  /// Returns "applied" | "ignored" | "conflict-resolved" | "refreshed".
   Future<String> applyChange(ChangeEvent incoming) async {
     _clock.observe(incoming.version);
     final existing = await storage.getRow(incoming.table, incoming.id);
@@ -99,6 +100,13 @@ class SyncClient {
         _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'conflict-resolved'});
         return 'conflict-resolved';
       }
+    }
+    // Ignore. Refresh the stored payload for an equal-version clean row so a
+    // server-normalized echo cannot be hidden by a racing ack.
+    if (existing != null && !existing.dirty && decision is Ignore && decision.reason == 'AlreadyApplied') {
+      await _adopt(incoming);
+      _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'refreshed'});
+      return 'refreshed';
     }
     _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'ignored'});
     return 'ignored';
@@ -167,6 +175,16 @@ class SyncClient {
       return WriteResult(WriteStatus.queued, version);
     }
   }
+
+  /// Delete convenience — an optimistic delete (null payload) through the same
+  /// queue path as [write]. Mirrors the JS client's delete().
+  Future<WriteResult> delete(
+    String table,
+    String id, {
+    WriteMode? mode,
+    ErrorPolicy? policy,
+  }) =>
+      write(table, id, null, op: Op.delete, mode: mode, policy: policy);
 
   Future<Hlc> _doSend(ChangeEvent change) {
     final s = send;

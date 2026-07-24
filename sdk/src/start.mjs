@@ -61,6 +61,7 @@ export async function startSync(opts) {
       startBackendStream({
         baseUrl: opts.backend.baseUrl,
         wsPath: opts.backend.wsPath,
+        getToken: opts.backend.getToken,
         sync: client,
         onReconnect: hydrateAll,
       }),

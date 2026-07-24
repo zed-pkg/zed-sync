@@ -31,11 +31,16 @@ export function makeBackendSender({ baseUrl, getToken, fetchImpl = fetch }) {
 
 /**
  * Open the backend sync WS and feed frames into the client. Reconnects with
- * backoff and re-hydrates on every (re)connect.
+ * backoff and re-hydrates on every (re)connect. A browser cannot set handshake
+ * headers on a WebSocket, so the bearer token (a static `token` or the same
+ * `getToken` the HTTP sender uses) rides as an `access_token` query param,
+ * resolved fresh on each (re)connect so a refreshed token is picked up.
  * @param {object} opts
  * @param {string} opts.baseUrl
  * @param {import("../client.mjs").SyncClient} opts.sync
  * @param {string} [opts.wsPath]
+ * @param {string} [opts.token]  static bearer token, appended as ?access_token=
+ * @param {() => (string|Promise<string>)} [opts.getToken]  resolved per (re)connect; wins over token
  * @param {() => Promise<void>} [opts.onReconnect]  e.g. re-hydrate
  * @param {(status: string) => void} [opts.onStatus]
  * @param {typeof WebSocket} [opts.WebSocketImpl]
@@ -45,6 +50,8 @@ export function startBackendStream({
   baseUrl,
   sync,
   wsPath = "/ws",
+  token,
+  getToken,
   onReconnect,
   onStatus,
   WebSocketImpl = globalThis.WebSocket,
@@ -55,9 +62,17 @@ export function startBackendStream({
   /** @type {WebSocket|undefined} */
   let ws;
 
-  const connect = () => {
+  const authedUrl = async () => {
+    const t = getToken ? await getToken() : token;
+    if (!t) return url;
+    return `${url}${url.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(t)}`;
+  };
+
+  const connect = async () => {
     if (stopped) return;
-    ws = new WebSocketImpl(url);
+    const target = await authedUrl();
+    if (stopped) return;
+    ws = new WebSocketImpl(target);
     ws.onopen = () => {
       attempt = 0;
       onStatus?.("open");
@@ -80,7 +95,7 @@ export function startBackendStream({
     };
     ws.onerror = () => ws?.close();
   };
-  connect();
+  void connect();
 
   return {
     stop() {

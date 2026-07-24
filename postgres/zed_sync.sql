@@ -64,6 +64,31 @@ SELECT
   write_key
 FROM zed_sync.outbox;
 
+-- Outbox retention. The outbox is an append-only log and grows without bound;
+-- this prunes rows committed before now() - retain_interval but ALWAYS keeps
+-- the latest row per (table_name, row_id), so every row's current state (or its
+-- delete tombstone) survives and reconcile/catch-up still see the newest
+-- version. Returns the number of rows pruned. Idempotent and injection-safe
+-- (a typed `interval` parameter, no dynamic SQL): a re-run prunes nothing new.
+-- Meant to be called periodically by a scheduler — pg_cron or the app, e.g.
+--   SELECT cron.schedule('zed-sync-prune-outbox', '17 3 * * *',
+--                        $$ SELECT zed_sync.prune_outbox(interval '30 days') $$);
+CREATE OR REPLACE FUNCTION zed_sync.prune_outbox(retain_interval interval)
+RETURNS bigint LANGUAGE plpgsql AS $$
+DECLARE
+  pruned bigint;
+BEGIN
+  DELETE FROM zed_sync.outbox o
+  WHERE o.committed_at < now() - retain_interval
+    AND o.sequence < (
+      SELECT max(o2.sequence) FROM zed_sync.outbox o2
+      WHERE o2.table_name = o.table_name AND o2.row_id = o.row_id
+    );
+  GET DIAGNOSTICS pruned = ROW_COUNT;
+  RETURN pruned;
+END;
+$$;
+
 -- Compute the next HLC given the previous one and the (monotonic) updated_at.
 CREATE OR REPLACE FUNCTION zed_sync.next_hlc(prev jsonb, updated timestamptz)
 RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
