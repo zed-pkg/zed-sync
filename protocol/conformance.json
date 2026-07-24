@@ -143,6 +143,18 @@
       "local": { "version": { "wall_ms": 30, "counter": 0, "actor": "dev" }, "dirty": true },
       "ack": { "id": "c1", "committed_version": { "wall_ms": 20, "counter": 0, "actor": "srv" } },
       "expected": "Superseded"
+    },
+    {
+      "name": "equal committed version adopts, not superseded",
+      "local": { "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "dirty": true },
+      "ack": { "id": "c1", "committed_version": { "wall_ms": 20, "counter": 0, "actor": "srv" } },
+      "expected": { "Adopt": { "wall_ms": 20, "counter": 0, "actor": "srv" } }
+    },
+    {
+      "name": "higher local counter at the same wall supersedes",
+      "local": { "version": { "wall_ms": 20, "counter": 2, "actor": "dev" }, "dirty": true },
+      "ack": { "id": "c1", "committed_version": { "wall_ms": 20, "counter": 1, "actor": "srv" } },
+      "expected": "Superseded"
     }
   ]
 }
