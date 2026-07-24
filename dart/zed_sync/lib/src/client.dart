@@ -100,6 +100,13 @@ class SyncClient {
         return 'conflict-resolved';
       }
     }
+    // Ignore. Refresh the stored payload for an equal-version clean row so a
+    // server-normalized echo cannot be hidden by a racing ack.
+    if (existing != null && !existing.dirty && decision is Ignore && decision.reason == 'AlreadyApplied') {
+      await _adopt(incoming);
+      _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'refreshed'});
+      return 'refreshed';
+    }
     _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'ignored'});
     return 'ignored';
   }
