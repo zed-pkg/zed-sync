@@ -117,6 +117,18 @@
       "queued": { "table": "carts", "id": "c1", "op": "upsert", "base_version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "key": "k-abc" },
       "incoming": { "table": "carts", "op": "upsert", "id": "c2", "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "row": { "id": "c2" }, "at_ms": 20, "write_key": "k-abc" },
       "expected": false
+    },
+    {
+      "name": "mismatched op is not our echo even with our key",
+      "queued": { "table": "carts", "id": "c1", "op": "upsert", "base_version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "key": "k-abc" },
+      "incoming": { "table": "carts", "op": "delete", "id": "c1", "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "row": null, "at_ms": 20, "write_key": "k-abc" },
+      "expected": false
+    },
+    {
+      "name": "mismatched table is not our echo even with our key",
+      "queued": { "table": "carts", "id": "c1", "op": "upsert", "base_version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "key": "k-abc" },
+      "incoming": { "table": "orders", "op": "upsert", "id": "c1", "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "row": { "id": "c1" }, "at_ms": 20, "write_key": "k-abc" },
+      "expected": false
     }
   ],
   "acks": [
