@@ -259,7 +259,13 @@ test("startSync gates hydration behind the lease and releases on stop", async ()
 
 test("startSync drains the inherited queue after winning the lease", async (t) => {
   const store = new MemoryStore();
-  // A write the previous (crashed) holder left behind in the shared store.
+  // A write the previous (crashed) holder left behind in the shared store:
+  // the dirty row plus its queued send, exactly as write() persists them.
+  await store.putRow("notes", "n1", { title: "left behind" }, {
+    version: { wall_ms: 1, counter: 0, actor: "device-1" },
+    dirty: true,
+    synced_at_ms: null,
+  });
   await store.enqueue({
     table: "notes",
     id: "n1",
