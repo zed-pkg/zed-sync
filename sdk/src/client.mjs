@@ -131,7 +131,7 @@ export class SyncClient {
    * @param {"upsert"|"delete"|{op?:string, merge?:boolean, mode?:string, errorPolicy?:string}} [options]
    * @returns {Promise<{ status: string, version: object }>}
    */
-  async write(table, id, row, options = "upsert") {
+  async write(table, id, row, options = {}) {
     const opts = typeof options === "string" ? { op: options } : options;
     const op = opts.op ?? (row === null ? "delete" : "upsert");
     const mode = assertWriteMode(opts.mode ?? this.writeMode);
