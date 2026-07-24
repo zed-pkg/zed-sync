@@ -66,6 +66,28 @@ test("pending returns a snapshot — mutating it does not affect the queue", asy
   assert.equal((await s.pending()).length, 1);
 });
 
+test("enqueue coalesces repeated writes to the same (table,id) into one entry", async () => {
+  const s = new MemoryStore();
+  const s1 = await s.enqueue({ table: "t", id: "1", payload: { n: 1 } });
+  const s2 = await s.enqueue({ table: "t", id: "1", payload: { n: 2 } });
+  assert.equal(s2, s1, "same queue slot reused");
+  const pending = await s.pending();
+  assert.equal(pending.length, 1, "coalesced, not appended");
+  assert.deepEqual(pending[0].payload, { n: 2 }, "newer payload wins");
+});
+
+test("enqueue does not grow the queue past maxQueueLength (drop-oldest)", async () => {
+  const dropped = [];
+  const s = new MemoryStore({ maxQueueLength: 3 });
+  s.onOverflow = (w) => dropped.push(w);
+  for (let i = 0; i < 10; i++) await s.enqueue({ table: "t", id: String(i) });
+  const pending = await s.pending();
+  assert.equal(pending.length, 3, "queue capped at maxQueueLength");
+  assert.deepEqual(pending.map((w) => w.id), ["7", "8", "9"], "oldest dropped, newest kept");
+  assert.equal(dropped.length, 7, "each overflow surfaced via onOverflow");
+  assert.deepEqual(dropped[0].id, "0", "oldest dropped first");
+});
+
 test("cursors roundtrip per scope, default to null, and stay independent", async () => {
   const s = new MemoryStore();
   assert.equal(await s.getCursor("feed"), null);
