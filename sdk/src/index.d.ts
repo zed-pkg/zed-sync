@@ -196,14 +196,4 @@ export function startSync(opts: {
   backend?: { baseUrl: string; wsPath?: string; getToken?: () => string | Promise<string> };
   supabase?: { client: unknown; filter?: string; schema?: string };
   hydrateFetch?: (table: string) => Promise<ChangeEvent[]>;
-  lease?: {
-    client: LeaseLockClient;
-    key?: string;
-    ttlMs?: number;
-    renewIntervalMs?: number;
-    holder?: string;
-    maxWaitMs?: number;
-    flushOnAcquire?: boolean;
-    onLost?: (err: LeaseLostError) => void;
-  };
-}): Promise<{ client: SyncClient; lease: SyncLease | null; stop(): void }>;
+}): Promise<{ client: SyncClient; stop(): void }>;
