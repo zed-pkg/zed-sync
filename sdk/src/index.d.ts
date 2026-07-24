@@ -113,7 +113,9 @@ export class MemoryStore implements Store {
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
 export class IndexedDbStore implements Store {
-  static open(dbName?: string, idb?: IDBFactory): Promise<IndexedDbStore>;
+  static open(dbName?: string, idb?: IDBFactory, opts?: { maxQueueLength?: number }): Promise<IndexedDbStore>;
+  maxQueueLength: number;
+  onOverflow: ((dropped: Record<string, unknown>) => void) | null;
   getRow(table: string, id: string): Promise<{ row: unknown; meta: RowMeta } | null>;
   putRow(table: string, id: string, row: unknown, meta: RowMeta): Promise<void>;
   removeRow(table: string, id: string, meta: RowMeta): Promise<void>;
