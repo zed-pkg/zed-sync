@@ -1,0 +1,94 @@
+{
+  "protocol_version": 1,
+  "_comment": "Shared golden cases. The Rust core (tests/conformance.rs), the JS core mirror (sdk/test/conformance.test.mjs), and the Dart core (dart/zed_sync/test) all run these so every language port agrees. Versions are HLC objects {wall_ms, counter, actor}.",
+  "reconcile": [
+    {
+      "name": "first upsert applies",
+      "local": null,
+      "incoming": { "table": "products", "op": "upsert", "id": "p1", "version": { "wall_ms": 1000, "counter": 0, "actor": "srv" }, "row": { "id": "p1" }, "at_ms": 1000 },
+      "expected": "Apply"
+    },
+    {
+      "name": "first delete is already applied",
+      "local": null,
+      "incoming": { "table": "products", "op": "delete", "id": "p1", "version": { "wall_ms": 1000, "counter": 0, "actor": "srv" }, "row": null, "at_ms": 1000 },
+      "expected": { "Ignore": "AlreadyApplied" }
+    },
+    {
+      "name": "older server state is stale",
+      "local": { "version": { "wall_ms": 2000, "counter": 0, "actor": "srv" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 1000, "counter": 0, "actor": "srv" }, "row": { "id": "o1" }, "at_ms": 1000 },
+      "expected": { "Ignore": "Stale" }
+    },
+    {
+      "name": "same version is idempotent",
+      "local": { "version": { "wall_ms": 2000, "counter": 3, "actor": "srv" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 2000, "counter": 3, "actor": "srv" }, "row": { "id": "o1" }, "at_ms": 2000 },
+      "expected": { "Ignore": "AlreadyApplied" }
+    },
+    {
+      "name": "higher counter same wall applies over clean",
+      "local": { "version": { "wall_ms": 2000, "counter": 3, "actor": "srv" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 2000, "counter": 4, "actor": "srv" }, "row": { "id": "o1" }, "at_ms": 2000 },
+      "expected": "Apply"
+    },
+    {
+      "name": "newer server state applies over clean local",
+      "local": { "version": { "wall_ms": 2000, "counter": 0, "actor": "srv" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 3000, "counter": 0, "actor": "srv" }, "row": { "id": "o1" }, "at_ms": 3000 },
+      "expected": "Apply"
+    },
+    {
+      "name": "newer server state conflicts with dirty local",
+      "local": { "version": { "wall_ms": 2000, "counter": 0, "actor": "dev" }, "dirty": true },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 3000, "counter": 0, "actor": "srv" }, "row": { "id": "o1" }, "at_ms": 3000 },
+      "expected": "Conflict"
+    },
+    {
+      "name": "actor breaks equal wall+counter as newer",
+      "local": { "version": { "wall_ms": 2000, "counter": 1, "actor": "aaa" }, "dirty": false },
+      "incoming": { "table": "orders", "op": "upsert", "id": "o1", "version": { "wall_ms": 2000, "counter": 1, "actor": "bbb" }, "row": { "id": "o1" }, "at_ms": 2000 },
+      "expected": "Apply"
+    }
+  ],
+  "echoes": [
+    {
+      "name": "matching write_key is our echo",
+      "queued": { "table": "carts", "id": "c1", "op": "upsert", "base_version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "key": "k-abc" },
+      "incoming": { "table": "carts", "op": "upsert", "id": "c1", "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "row": { "id": "c1" }, "at_ms": 20, "write_key": "k-abc" },
+      "expected": true
+    },
+    {
+      "name": "different write_key is not our echo even at expected version",
+      "queued": { "table": "carts", "id": "c1", "op": "upsert", "base_version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "key": "k-abc" },
+      "incoming": { "table": "carts", "op": "upsert", "id": "c1", "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "row": { "id": "c1" }, "at_ms": 20, "write_key": "k-other" },
+      "expected": false
+    },
+    {
+      "name": "missing write_key is not our echo",
+      "queued": { "table": "carts", "id": "c1", "op": "upsert", "base_version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "key": "k-abc" },
+      "incoming": { "table": "carts", "op": "upsert", "id": "c1", "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "row": { "id": "c1" }, "at_ms": 20 },
+      "expected": false
+    },
+    {
+      "name": "mismatched id is not our echo",
+      "queued": { "table": "carts", "id": "c1", "op": "upsert", "base_version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "key": "k-abc" },
+      "incoming": { "table": "carts", "op": "upsert", "id": "c2", "version": { "wall_ms": 20, "counter": 0, "actor": "srv" }, "row": { "id": "c2" }, "at_ms": 20, "write_key": "k-abc" },
+      "expected": false
+    }
+  ],
+  "acks": [
+    {
+      "name": "adopt committed version when local has not advanced",
+      "local": { "version": { "wall_ms": 10, "counter": 0, "actor": "dev" }, "dirty": true },
+      "ack": { "id": "c1", "committed_version": { "wall_ms": 20, "counter": 0, "actor": "srv" } },
+      "expected": { "Adopt": { "wall_ms": 20, "counter": 0, "actor": "srv" } }
+    },
+    {
+      "name": "superseded when local already advanced past the ack",
+      "local": { "version": { "wall_ms": 30, "counter": 0, "actor": "dev" }, "dirty": true },
+      "ack": { "id": "c1", "committed_version": { "wall_ms": 20, "counter": 0, "actor": "srv" } },
+      "expected": "Superseded"
+    }
+  ]
+}

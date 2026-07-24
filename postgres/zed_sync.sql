@@ -1,0 +1,139 @@
+-- zed-sync — canonical Postgres schema for the sync contract.
+--
+-- Server-side obligations (see docs/postgres.md, docs/timestamps.md,
+-- docs/protocol.md) so created_at / updated_at / version can never drift:
+--
+--   * `sync_version` (an HLC {wall_ms, counter, actor}) is computed by trigger
+--     on every INSERT/UPDATE — never trusted from the client. It is the ONLY
+--     reconciliation key.
+--   * `updated_at` is strictly monotonic per row:
+--     greatest(clock_timestamp(), old.updated_at + 1 microsecond). A stepped-
+--     back system clock can never make it regress or repeat (the microsecond
+--     bump is the logical part of the hybrid clock).
+--   * `created_at` is immutable after insert (an UPDATE that rewrites it is
+--     corrected back).
+--   * every committed mutation lands in `zed_sync_outbox` in COMMIT order
+--     (an advisory xact-lock serializes sync writers, so a catch-up cursor
+--     that paged past sequence N can never later find N-1 filled in by an
+--     older commit).
+--   * DELETEs write a tombstone whose HLC is one logical tick past the deleted
+--     row's, so reconcile treats the delete as newer than the last upsert.
+--   * the client's Idempotency-Key is echoed as `write_key` when the service
+--     sets the `zed_sync.write_key` GUC for the transaction.
+--
+-- Apply:            psql -f postgres/zed_sync.sql
+-- Attach a table:   SELECT zed_sync_attach('public.products');
+-- Idempotent: safe to re-run.
+
+CREATE SCHEMA IF NOT EXISTS zed_sync;
+
+-- Server actor id for HLCs this database authors (stable per plane).
+CREATE OR REPLACE FUNCTION zed_sync.actor() RETURNS text
+LANGUAGE sql IMMUTABLE AS $$ SELECT 'pg'::text $$;
+
+-- Plane-wide, commit-ordered catch-up cursor. Bounded by the shared wire
+-- integer range (JS Number.MAX_SAFE_INTEGER = 9007199254740991).
+CREATE SEQUENCE IF NOT EXISTS zed_sync.sequence
+  AS bigint MINVALUE 1 MAXVALUE 9007199254740991;
+
+CREATE TABLE IF NOT EXISTS zed_sync.outbox (
+  sequence     bigint PRIMARY KEY DEFAULT nextval('zed_sync.sequence'),
+  table_name   text        NOT NULL CHECK (table_name ~ '^[a-z][a-z0-9_]{0,62}$'),
+  operation    text        NOT NULL CHECK (operation IN ('upsert', 'delete')),
+  row_id       text        NOT NULL CHECK (length(row_id) BETWEEN 1 AND 512),
+  version      jsonb       NOT NULL,   -- HLC {wall_ms, counter, actor}
+  row_data     jsonb,                  -- NULL is a delete tombstone
+  committed_at timestamptz NOT NULL DEFAULT now(),
+  write_key    text        CHECK (write_key IS NULL OR length(write_key) BETWEEN 1 AND 512),
+  CHECK ((operation = 'delete') = (row_data IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS zed_sync_outbox_table_row
+  ON zed_sync.outbox (table_name, row_id, sequence);
+
+-- The fixed catch-up projection read by the backend's PostgresChangeSource.
+CREATE OR REPLACE VIEW zed_sync.changes AS
+SELECT
+  sequence AS sync_sequence,
+  table_name,
+  operation AS op,
+  row_id AS id,
+  version,
+  row_data AS row,
+  (extract(epoch FROM committed_at) * 1000)::bigint AS at_ms,
+  write_key
+FROM zed_sync.outbox;
+
+-- Compute the next HLC given the previous one and the (monotonic) updated_at.
+CREATE OR REPLACE FUNCTION zed_sync.next_hlc(prev jsonb, updated timestamptz)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+  wall  bigint := floor(extract(epoch FROM updated) * 1000)::bigint;
+  ctr   int := 0;
+BEGIN
+  IF prev IS NOT NULL AND (prev->>'wall_ms')::bigint = wall THEN
+    ctr := (prev->>'counter')::int + 1;
+  END IF;
+  RETURN jsonb_build_object('wall_ms', wall, 'counter', ctr, 'actor', zed_sync.actor());
+END;
+$$;
+
+-- BEFORE trigger: server-authoritative timestamps + HLC version. Runs LAST
+-- (name prefixed zzz) so it corrects any earlier trigger's raw now().
+CREATE OR REPLACE FUNCTION zed_sync.stamp()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.created_at := COALESCE(NEW.created_at, clock_timestamp());
+    NEW.updated_at := GREATEST(clock_timestamp(), NEW.created_at);
+    NEW.sync_version := zed_sync.next_hlc(NULL, NEW.updated_at);
+  ELSE
+    NEW.created_at := OLD.created_at; -- immutable
+    NEW.updated_at := GREATEST(clock_timestamp(), OLD.updated_at + interval '1 microsecond');
+    NEW.sync_version := zed_sync.next_hlc(OLD.sync_version, NEW.updated_at);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+-- AFTER trigger: record the committed state in the outbox in commit order.
+CREATE OR REPLACE FUNCTION zed_sync.record()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  op text; rid text; ver jsonb; payload jsonb;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('zed_sync.outbox'));
+  IF TG_OP = 'DELETE' THEN
+    op := 'delete';
+    rid := OLD.id::text;
+    -- One logical tick past the deleted row's HLC, so the tombstone is newer.
+    ver := jsonb_set(OLD.sync_version, '{counter}',
+                     to_jsonb((OLD.sync_version->>'counter')::int + 1));
+    payload := NULL;
+  ELSE
+    op := 'upsert';
+    rid := NEW.id::text;
+    ver := NEW.sync_version;
+    payload := to_jsonb(NEW);
+  END IF;
+  INSERT INTO zed_sync.outbox (table_name, operation, row_id, version, row_data, write_key)
+  VALUES (TG_TABLE_NAME, op, rid, ver, payload,
+          nullif(current_setting('zed_sync.write_key', true), ''));
+  RETURN NULL;
+END;
+$$;
+
+-- Attach the sync contract to a table: add the columns (if missing) and
+-- install both triggers. The table must have a text-representable `id`.
+CREATE OR REPLACE FUNCTION zed_sync_attach(target regclass)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  EXECUTE format('ALTER TABLE %s ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()', target);
+  EXECUTE format('ALTER TABLE %s ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()', target);
+  EXECUTE format('ALTER TABLE %s ADD COLUMN IF NOT EXISTS sync_version jsonb', target);
+  EXECUTE format('DROP TRIGGER IF EXISTS zzz_zed_sync_stamp ON %s', target);
+  EXECUTE format('CREATE TRIGGER zzz_zed_sync_stamp BEFORE INSERT OR UPDATE ON %s FOR EACH ROW EXECUTE FUNCTION zed_sync.stamp()', target);
+  EXECUTE format('DROP TRIGGER IF EXISTS zed_sync_record ON %s', target);
+  EXECUTE format('CREATE TRIGGER zed_sync_record AFTER INSERT OR UPDATE OR DELETE ON %s FOR EACH ROW EXECUTE FUNCTION zed_sync.record()', target);
+END;
+$$;

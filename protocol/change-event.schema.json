@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zpkg.tech/schemas/sync/change-event-v1.json",
+  "title": "zed-sync change event v1",
+  "description": "The wire envelope both transports (Supabase realtime + backend catch-up) decode to. `version` is a Hybrid Logical Clock and is the ONLY reconciliation key; `sync_sequence` is the catch-up cursor and never feeds reconciliation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["table", "op", "id", "version", "at_ms"],
+  "properties": {
+    "table": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,62}$" },
+    "op": { "enum": ["upsert", "delete"] },
+    "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "version": { "$ref": "#/$defs/Hlc" },
+    "row": {
+      "description": "Row payload for upserts; null for deletes.",
+      "type": ["object", "null"]
+    },
+    "at_ms": {
+      "description": "Server commit wall-clock (epoch ms); shown in UIs, never used for ordering.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "write_key": {
+      "description": "Echo of a client's durable per-write idempotency key.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "sync_sequence": {
+      "description": "Plane-wide commit-ordered catch-up cursor; never used for row reconciliation.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "$defs": {
+    "Hlc": {
+      "description": "Hybrid Logical Clock stamp. Total order: wall_ms, then counter, then actor.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wall_ms", "counter", "actor"],
+      "properties": {
+        "wall_ms": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "counter": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "actor": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    }
+  }
+}

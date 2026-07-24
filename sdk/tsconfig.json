@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "comment": "Build-free ESM: the shipped types are the hand-written index.d.ts. tsc validates those declarations; the .mjs runtime carries JSDoc for editors but is not strictly inferred.",
+  "include": ["src/index.d.ts", "test/types.test-d.ts"]
+}

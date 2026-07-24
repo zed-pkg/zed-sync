@@ -1,0 +1,14 @@
+name: zed_sync
+description: >-
+  Offline-first sync for Flutter/Dart (iOS, Android): optimistic writes with
+  enum write-policies, HLC reconciliation, and the same protocol contract as
+  @zed-pkg/sync and zed-sync-core.
+version: 0.1.0
+repository: https://github.com/zed-pkg/zed-sync
+publish_to: none
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dev_dependencies:
+  test: ^1.25.0

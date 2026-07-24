@@ -1,2 +1,8 @@
+/target
+Cargo.lock
 node_modules/
-dist/
+sdk/pkg/
+dart/**/.dart_tool/
+dart/**/pubspec.lock
+dart/**/build/
+.DS_Store

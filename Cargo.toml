@@ -1,0 +1,26 @@
+[package]
+name = "zed-sync-core"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-IO reconciliation core for zed-sync: HLC versioning, write policies, echo/ack rules. Native + WASM."
+license = "MIT"
+repository = "https://github.com/zed-pkg/zed-sync"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Browser core: `wasm-pack build --target web --out-dir sdk/pkg -- --features wasm`
+wasm = ["dep:wasm-bindgen"]
+# Server-side catch-up adapter surface (SeaORM-friendly; no bare SQLx API).
+postgres = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+wasm-bindgen = { version = "0.2", optional = true }
+
+[dev-dependencies]
+serde_json = "1"

@@ -5,13 +5,33 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  rust-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test
+      - run: cargo fmt --check
+
+  js-sdk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - run: npm run build
-      - run: npm test
+      - run: npm --prefix sdk install
+      - run: npm --prefix sdk test
+      - run: npm --prefix sdk run typecheck
+
+  dart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+        working-directory: dart/zed_sync
+      - run: dart analyze lib
+        working-directory: dart/zed_sync
+      - run: dart test
+        working-directory: dart/zed_sync

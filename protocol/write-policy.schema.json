@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zpkg.tech/schemas/sync/write-policy-v1.json",
+  "title": "zed-sync write policy v1",
+  "description": "Canonical enum values for the per-write optimism level, error surface, and conflict resolution. Shared by every language port (JS sdk/src/policy.mjs, Dart lib/src/policy.dart, Rust src/policy.rs) and mirrored by zed-interfaces (SyncWriteMode / SyncErrorPolicy / SyncConflictResolution). zed-sync is the source of truth for these values.",
+  "$defs": {
+    "WriteMode": {
+      "description": "local_only: apply locally + enqueue durably, no network until the next flush. optimistic_queue: apply locally, enqueue, send; a send failure leaves the write queued (default). optimistic_await_ack: like optimistic_queue but a send failure is surfaced per the error policy. server_first: send first, apply locally only after the ack. server_only: send only; local state updates when the change feed delivers the committed row.",
+      "type": "string",
+      "enum": [
+        "local_only",
+        "optimistic_queue",
+        "optimistic_await_ack",
+        "server_first",
+        "server_only"
+      ],
+      "default": "optimistic_queue"
+    },
+    "ErrorPolicy": {
+      "description": "throw_only: reject/throw. emit_only: report via telemetry/onError, settle normally (default for writes). throw_and_emit: both. silent: neither.",
+      "type": "string",
+      "enum": ["throw_only", "emit_only", "throw_and_emit", "silent"],
+      "default": "emit_only"
+    },
+    "ConflictResolution": {
+      "description": "server_wins: adopt the server row and drop the queued local write (default). last_write_wins: keep the higher HLC version, so leaderless multi-master converges deterministically.",
+      "type": "string",
+      "enum": ["server_wins", "last_write_wins"],
+      "default": "server_wins"
+    }
+  }
+}

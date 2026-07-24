@@ -1,0 +1,21 @@
+{
+  "name": "@zed-pkg/sync",
+  "version": "0.1.0",
+  "description": "Offline-first sync SDK: optimistic writes to IndexedDB/localStorage with enum write-policies, OpenTelemetry, and HLC reconciliation to Supabase/Postgres. Zero runtime dependencies.",
+  "license": "MIT",
+  "repository": "github:zed-pkg/zed-sync",
+  "type": "module",
+  "main": "src/index.mjs",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": { "types": "./src/index.d.ts", "default": "./src/index.mjs" }
+  },
+  "files": ["src", "pkg"],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
