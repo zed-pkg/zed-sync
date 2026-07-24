@@ -53,12 +53,18 @@ export class Clock {
 
   /** Fold in an observed remote stamp. @param {Hlc} remote @param {number} [nowMs] */
   observe(remote, nowMs = Date.now()) {
-    const maxWall = Math.max(nowMs, this.wall_ms, remote.wall_ms);
-    if (maxWall === this.wall_ms && maxWall === remote.wall_ms) {
+    // Clock-drift clamp: an over-drift remote wall is IGNORED (not folded in), so
+    // the local clock never advances past nowMs + MAX_DRIFT_MS. In range, behavior
+    // is identical to the classic HLC update.
+    const remoteOk = remote.wall_ms <= nowMs + MAX_DRIFT_MS;
+    const maxWall = remoteOk
+      ? Math.max(nowMs, this.wall_ms, remote.wall_ms)
+      : Math.max(nowMs, this.wall_ms);
+    if (remoteOk && maxWall === this.wall_ms && maxWall === remote.wall_ms) {
       this.counter = Math.max(this.counter, remote.counter) + 1;
     } else if (maxWall === this.wall_ms) {
       this.counter += 1;
-    } else if (maxWall === remote.wall_ms) {
+    } else if (remoteOk && maxWall === remote.wall_ms) {
       this.counter = remote.counter + 1;
     } else {
       this.counter = 0;
