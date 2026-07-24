@@ -58,6 +58,8 @@ export function assertConflictResolution(resolution: string): ConflictResolution
 
 export function compareHlc(a: Hlc, b: Hlc): -1 | 0 | 1;
 export function encodeHlc(h: Hlc): string;
+/** Reject a remote stamp whose wall clock runs more than this far ahead (ms). */
+export const MAX_DRIFT_MS: number;
 export class Clock {
   constructor(actor: string);
   actor: string;
