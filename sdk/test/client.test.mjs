@@ -137,6 +137,34 @@ test("server-wins conflict adopts server row and drops the queued write", async 
   assert.equal((await store.pending()).length, 0, "queued write dropped on server-wins");
 });
 
+test("applyChange drops incoming changes for non-allowlisted tables", async () => {
+  const telemetry = recordingTelemetry();
+  const { client, store } = makeClient({ tables: ["products"], telemetry });
+  // Allowed table applies as normal.
+  const allowed = await client.applyChange({
+    table: "products", op: "upsert", id: "p1",
+    version: { wall_ms: 100, counter: 0, actor: "srv" }, row: { id: "p1" }, at_ms: 100,
+  });
+  assert.equal(allowed, "applied");
+  // A change for a table not in the allowlist is dropped, never written.
+  const dropped = await client.applyChange({
+    table: "secrets", op: "upsert", id: "s1",
+    version: { wall_ms: 200, counter: 0, actor: "srv" }, row: { id: "s1", stolen: true }, at_ms: 200,
+  });
+  assert.equal(dropped, "ignored");
+  assert.equal(await store.getRow("secrets", "s1"), null, "non-allowlisted change not stored");
+  assert.ok(telemetry.events.some((e) => e.name === "sync.change.rejected"));
+});
+
+test("applyChange without an allowlist accepts any table (back-compat)", async () => {
+  const { client, store } = makeClient();
+  await client.applyChange({
+    table: "anything", op: "upsert", id: "x",
+    version: { wall_ms: 1, counter: 0, actor: "srv" }, row: { id: "x" }, at_ms: 1,
+  });
+  assert.notEqual(await store.getRow("anything", "x"), null);
+});
+
 test("telemetry fires the write lifecycle events", async () => {
   const telemetry = recordingTelemetry();
   const { client } = makeClient({ telemetry });
