@@ -83,6 +83,34 @@ export async function startSync(opts) {
 
   /** @type {Array<{ stop(): void }>} */
   const stoppers = [];
+  const stopTransports = () => {
+    for (const s of stoppers.splice(0)) s.stop();
+  };
+
+  // Single-flusher lease: block until this instance is the elected flusher
+  // BEFORE any transport, hydration, or flush touches the shared store. On
+  // loss of authority the transports stop — local writes keep queueing and a
+  // promoted instance (possibly this one, re-elected by the app) drains them.
+  if (opts.lease) {
+    lease = new SyncLease({
+      client: opts.lease.client,
+      key: opts.lease.key ?? flusherLeaseKey(opts.dbName ?? "zed-sync", opts.actor),
+      ttlMs: opts.lease.ttlMs,
+      renewIntervalMs: opts.lease.renewIntervalMs,
+      holder: opts.lease.holder,
+      onLost: (err) => {
+        stopTransports();
+        client.telemetry.event("sync.lease.lost", { key: lease.key, error: err });
+        opts.lease.onLost?.(err);
+      },
+    });
+    await lease.acquire({ maxWaitMs: opts.lease.maxWaitMs });
+    client.telemetry.event("sync.lease.acquired", {
+      key: lease.key,
+      fencing_token: lease.fencingToken,
+    });
+  }
+
   if (opts.backend) {
     stoppers.push(
       startBackendStream({
