@@ -107,8 +107,13 @@ fn rust_core_conforms_to_the_shared_protocol_fixture() {
         for op in case.ops {
             match (op.tick, op.observe) {
                 (Some(now), None) => hlc.tick(now),
-                (None, Some(remote)) => hlc.observe(&remote, op.now.expect("observe op needs `now`")),
-                _ => panic!("clock op must be exactly one of tick/observe: {}", case.name),
+                (None, Some(remote)) => {
+                    hlc.observe(&remote, op.now.expect("observe op needs `now`"))
+                }
+                _ => panic!(
+                    "clock op must be exactly one of tick/observe: {}",
+                    case.name
+                ),
             }
             assert_eq!(hlc, op.expect, "clock fixture failed: {}", case.name);
         }
