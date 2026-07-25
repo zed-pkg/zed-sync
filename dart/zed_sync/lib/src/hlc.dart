@@ -31,6 +31,12 @@ class Hlc {
   }
 }
 
+/// Reject a remote stamp whose wall clock runs more than this far ahead of ours
+/// (5 minutes). Mirrors MAX_DRIFT_MS in src/hlc.rs and sdk/src/hlc.mjs. Without
+/// the bound one attacker-controlled far-future wallMs would permanently poison
+/// the clock and win every last_write_wins conflict.
+const int maxDriftMs = 300000;
+
 /// A device-local clock producing strictly monotonic stamps even when the wall
 /// clock jumps backwards.
 class Clock {
@@ -53,12 +59,17 @@ class Clock {
 
   Hlc observe(Hlc remote, [int? nowMs]) {
     final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    final maxWall = [now, _wallMs, remote.wallMs].reduce((a, b) => a > b ? a : b);
-    if (maxWall == _wallMs && maxWall == remote.wallMs) {
+    // Clock-drift clamp: an over-drift remote wall is IGNORED (not folded in), so
+    // the local clock never advances past now + maxDriftMs. In range, behavior is
+    // identical to the classic HLC update (matches src/hlc.rs, sdk/src/hlc.mjs).
+    final remoteOk = remote.wallMs <= now + maxDriftMs;
+    final remoteWall = remoteOk ? remote.wallMs : 0;
+    final maxWall = [now, _wallMs, remoteWall].reduce((a, b) => a > b ? a : b);
+    if (remoteOk && maxWall == _wallMs && maxWall == remote.wallMs) {
       _counter = (_counter > remote.counter ? _counter : remote.counter) + 1;
     } else if (maxWall == _wallMs) {
       _counter += 1;
-    } else if (maxWall == remote.wallMs) {
+    } else if (remoteOk && maxWall == remote.wallMs) {
       _counter = remote.counter + 1;
     } else {
       _counter = 0;
