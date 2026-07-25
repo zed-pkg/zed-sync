@@ -156,5 +156,53 @@
       "ack": { "id": "c1", "committed_version": { "wall_ms": 20, "counter": 1, "actor": "srv" } },
       "expected": "Superseded"
     }
-  ]
+  ],
+  "clock": {
+    "_comment": "Hybrid Logical Clock behavior — the piece that used to be tested per-language and drifted (Dart once lacked the over-drift clamp). Each case starts from a fresh clock (wall_ms=0, counter=0, the given actor) and applies `ops` in order. An op is either {tick, expect} (advance for a local event at wall-clock `tick` ms) or {observe, now, expect} (fold in remote stamp `observe` at local wall-clock `now`). `expect` is the whole resulting HLC. Run identically by Rust (src/hlc.rs), JS (sdk/src/hlc.mjs), and Dart (dart/.../hlc.dart).",
+    "maxDriftMs": 300000,
+    "cases": [
+      {
+        "name": "tick is monotonic even when the wall clock steps backwards",
+        "actor": "a",
+        "ops": [
+          { "tick": 2000, "expect": { "wall_ms": 2000, "counter": 0, "actor": "a" } },
+          { "tick": 1500, "expect": { "wall_ms": 2000, "counter": 1, "actor": "a" } },
+          { "tick": 2000, "expect": { "wall_ms": 2000, "counter": 2, "actor": "a" } },
+          { "tick": 2001, "expect": { "wall_ms": 2001, "counter": 0, "actor": "a" } }
+        ]
+      },
+      {
+        "name": "observe folds an in-range remote that is ahead of local",
+        "actor": "a",
+        "ops": [
+          { "tick": 1000, "expect": { "wall_ms": 1000, "counter": 0, "actor": "a" } },
+          { "observe": { "wall_ms": 1050, "counter": 2, "actor": "b" }, "now": 1000, "expect": { "wall_ms": 1050, "counter": 3, "actor": "a" } }
+        ]
+      },
+      {
+        "name": "observe at an equal wall takes max(counter)+1",
+        "actor": "a",
+        "ops": [
+          { "tick": 1050, "expect": { "wall_ms": 1050, "counter": 0, "actor": "a" } },
+          { "observe": { "wall_ms": 1050, "counter": 4, "actor": "b" }, "now": 1000, "expect": { "wall_ms": 1050, "counter": 5, "actor": "a" } }
+        ]
+      },
+      {
+        "name": "observe advances to local now when both local and remote are behind it",
+        "actor": "a",
+        "ops": [
+          { "tick": 1000, "expect": { "wall_ms": 1000, "counter": 0, "actor": "a" } },
+          { "observe": { "wall_ms": 900, "counter": 9, "actor": "b" }, "now": 2000, "expect": { "wall_ms": 2000, "counter": 0, "actor": "a" } }
+        ]
+      },
+      {
+        "name": "observe CLAMPS a far-future poison remote to now (never past now + maxDriftMs)",
+        "actor": "a",
+        "ops": [
+          { "tick": 1000, "expect": { "wall_ms": 1000, "counter": 0, "actor": "a" } },
+          { "observe": { "wall_ms": 9999999999999, "counter": 0, "actor": "attacker" }, "now": 2000, "expect": { "wall_ms": 2000, "counter": 0, "actor": "a" } }
+        ]
+      }
+    ]
+  }
 }

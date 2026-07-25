@@ -85,3 +85,13 @@ Canonical values in `protocol/write-policy.schema.json`.
 (`sync.write.*`, `sync.flush.*`, `sync.change`, `sync.hydrate`, `sync.status`)
 through the injectable sink (`sdk/src/telemetry.mjs`) with an OpenTelemetry
 adapter.
+
+## Conformance & tests
+
+`protocol/conformance.json` holds the golden cases every port runs identically —
+`reconcile`, `echoes`, `acks`, and `clock` (HLC `tick`/`observe`, including the
+over-drift clamp that keeps a far-future remote stamp from poisoning the local
+clock). Because HLC ordering decides every reconcile and `last_write_wins`
+outcome, the clock is fixtured too, so no runtime can drift from the others.
+Per-runtime end-to-end suites drive the full optimistic-write / transport stack.
+See [testing.md](testing.md).

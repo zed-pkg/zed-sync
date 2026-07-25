@@ -62,6 +62,23 @@ void main() {
     }
   });
 
+  test('clock (tick/observe/drift-clamp) matches every shared fixture case', () {
+    final clock = fixture['clock'] as Map<String, dynamic>;
+    expect(clock['maxDriftMs'], maxDriftMs, reason: 'drift bound agrees with the fixture');
+    for (final c in clock['cases'] as List) {
+      final ck = Clock(c['actor'] as String);
+      for (final op in (c['ops'] as List).cast<Map<String, dynamic>>()) {
+        final got = op.containsKey('tick')
+            ? ck.tick((op['tick'] as num).toInt())
+            : ck.observe(Hlc.fromJson(op['observe'] as Map<String, dynamic>), (op['now'] as num).toInt());
+        final e = op['expect'] as Map<String, dynamic>;
+        expect(got.wallMs, (e['wall_ms'] as num).toInt(), reason: c['name'] as String);
+        expect(got.counter, (e['counter'] as num).toInt(), reason: c['name'] as String);
+        expect(got.actor, e['actor'], reason: c['name'] as String);
+      }
+    }
+  });
+
   test('HLC encoding is sortable and matches the shared format', () {
     expect(const Hlc(0x0197f3b2c4d1, 3, 'x').encode(), '0197f3b2c4d1-0003');
     final clock = Clock('dev');
