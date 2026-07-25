@@ -35,3 +35,23 @@ jobs:
         working-directory: dart/zed_sync
       - run: dart test
         working-directory: dart/zed_sync
+
+  # Rebuild the browser wasm core FROM SOURCE and prove it still matches the
+  # pure-JS mirror + the shared conformance fixture. This catches a committed
+  # sdk/pkg going stale relative to src/, and guarantees the two cores agree.
+  wasm-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-bindgen-action@v0.2.0
+        with:
+          version: "0.2.126"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bash sdk/build-wasm.sh
+      - run: npm --prefix sdk install
+      - run: node --test sdk/test/wasm-parity.test.mjs

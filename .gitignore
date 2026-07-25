@@ -1,7 +1,9 @@
 /target
 Cargo.lock
 node_modules/
-sdk/pkg/
+# sdk/pkg/ is committed (the built browser wasm core, like the reference ships
+# its wasm) so @zed-pkg/sync installs without a build step and the parity test
+# runs everywhere; CI rebuilds it from source to catch staleness.
 dart/**/.dart_tool/
 dart/**/pubspec.lock
 dart/**/build/
