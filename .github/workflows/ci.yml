@@ -55,3 +55,21 @@ jobs:
       - run: bash sdk/build-wasm.sh
       - run: npm --prefix sdk install
       - run: node --test sdk/test/wasm-parity.test.mjs
+
+  # Prove the shipped ESM SDK in the runtime it targets: IndexedDbStore + the
+  # optimistic SyncClient exercised in real headless Chromium (durable rows +
+  # write-queue across a reload, and reconcile over real IDB). MemoryStore is
+  # covered off-DOM by js-sdk; this is the only browser-IDB path.
+  browser:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

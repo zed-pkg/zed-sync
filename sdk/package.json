@@ -13,9 +13,11 @@
   "files": ["src", "pkg"],
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "test:browser": "node --test test/browser/*.test.mjs",
     "typecheck": "tsc -p ."
   },
   "devDependencies": {
+    "playwright": "^1.61.0",
     "typescript": "^5.5.0"
   }
 }

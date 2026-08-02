@@ -1,6 +1,7 @@
 // MemoryStore contract tests — the store interface SyncClient depends on
 // (rows, tombstones, the durable queue, cursors). IndexedDbStore implements
-// the same interface but needs a browser IDB, so it is exercised in browsers.
+// the same interface but needs a browser IDB, so it is exercised in headless
+// Chromium by test/browser/idb.browser.test.mjs (`npm run test:browser`).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MemoryStore } from "../src/store.mjs";
