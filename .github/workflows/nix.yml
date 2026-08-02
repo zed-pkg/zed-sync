@@ -1,0 +1,58 @@
+name: nix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - src/**
+      - sdk/**
+      - dart/**
+      - protocol/**
+      - flake.nix
+      - flake.lock
+      - .nix/**
+      - agents.md
+      - README.md
+      - .github/workflows/nix.yml
+  pull_request:
+    paths:
+      - Cargo.toml
+      - src/**
+      - sdk/**
+      - dart/**
+      - protocol/**
+      - flake.nix
+      - flake.lock
+      - .nix/**
+      - agents.md
+      - README.md
+      - .github/workflows/nix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Validate the complete sync contract matrix
+        run: nix develop --no-update-lock-file -c agent-check
