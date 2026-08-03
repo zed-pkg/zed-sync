@@ -1,0 +1,57 @@
+[package]
+org = "zed-pkg"
+name = "zed-sync"
+version = "0.1.0"
+description = "Cross-language offline-first synchronization for the zed-pkg fleet"
+license = "MIT"
+keywords = ["sync", "offline-first", "wasm", "indexeddb", "polyglot"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/zed-pkg/zed-sync"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/sdk/package.json\" && test -f \"$ZED_PKG_TEST_TARGET/dart/zed_sync/pubspec.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/protocol/change-event.schema.json\""
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "tmp/**", "**/*.log", ".DS_Store", "**/target/**", "**/node_modules/**", "**/.dart_tool/**", "**/build/**", "sdk/pkg/**"]
+
+[targets.repository]
+dir = "."
+name = "zed-sync-repository"
+
+[targets.rust]
+dir = "."
+adapter = "rust"
+
+[targets.rust.native]
+registry = "crates-io"
+package = "zed-sync-core"
+
+[targets.nodejs]
+dir = "sdk"
+adapter = "node"
+
+[targets.nodejs.native]
+registry = "npm"
+package = "@zed-pkg/sync"
+forge = ["github-packages", "gitlab-packages", "bitbucket-packages"]
+
+[targets.dart]
+dir = "dart/zed_sync"
+adapter = "dart"
+
+[targets.dart.native]
+registry = "pub.dev"
+package = "zed_sync"
+
+[targets.postgres]
+dir = "postgres"
+adapter = "none"
+
+[targets.protocol]
+dir = "protocol"
+adapter = "none"
+
+[scripts]
+test = "cargo test && npm --prefix sdk test"
