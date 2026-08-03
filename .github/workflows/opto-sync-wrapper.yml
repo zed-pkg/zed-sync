@@ -1,0 +1,124 @@
+name: opto-sync wrapper contract
+
+on:
+  pull_request:
+    paths:
+      - '.zpkg.toml'
+      - '.zpkg.lock'
+      - 'opto-sync-adapter.json'
+      - '.github/workflows/opto-sync-wrapper.yml'
+  workflow_dispatch:
+    inputs:
+      live_install:
+        description: Resolve and inspect the certified Zed artifact
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZED_CLI_SHA: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate the staged wrapper boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import tomllib
+
+          root = pathlib.Path('.')
+          manifest = tomllib.loads((root / '.zpkg.toml').read_text())
+          lock = (root / '.zpkg.lock').read_text().strip()
+          profile = json.loads((root / 'opto-sync-adapter.json').read_text())
+
+          assert manifest['dependencies']['opto-sync/opto-sync-clients'] == '^0.2.0'
+          assert manifest['install']['dir'] == 'zed_modules'
+          assert profile['dependency'] == {
+              'package': 'opto-sync/opto-sync-clients',
+              'range': '^0.2.0',
+              'installRoot': 'zed_modules/opto-sync/opto-sync-clients',
+          }
+          assert profile['repository'] == 'zed-pkg/zed-sync'
+          assert profile['e2eRepository'] == 'zed-pkg/zed-e2e'
+          assert profile['invariants']['renderLocalView'] is True
+          assert profile['invariants']['realtimeIsWakeHint'] is True
+          assert profile['invariants']['serverCursorIsAuthoritative'] is True
+          assert profile['invariants']['mutableGitRefsForbidden'] is True
+          assert profile['invariants']['removeBespokeCoreOnlyAfterParity'] is True
+          assert profile['wrapperRetains'] and profile['delegatesToOptoSync']
+
+          expected = {
+              'rust': ('opto-sync-client', 'clients/rust'),
+              'typescript': ('@opto-sync/client', 'clients/ts'),
+              'dart': ('opto_sync_client', 'clients/dart'),
+          }
+          for language, (package, suffix) in expected.items():
+              adapter = profile['nativeAdapters'][language]
+              assert adapter['package'] == package
+              assert adapter['path'].endswith(suffix)
+              assert '..' not in pathlib.PurePosixPath(adapter['path']).parts
+
+          # Until DEN-309 publishes the certified artifact, only the lock-format
+          # header is honest. Once releaseState changes, a resolved package entry
+          # is mandatory and this check fails closed.
+          if profile['releaseState'] == 'blocked-until-certified-package-published':
+              assert lock == 'version = 1'
+          else:
+              assert 'opto-sync/opto-sync-clients' in lock
+              assert 'sha256' in lock
+
+          serialized = json.dumps(profile).lower()
+          for mutable in ('refs/heads/main', 'branch = "main"', 'latest'):
+              assert mutable not in serialized
+          PY
+
+  live-install:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live_install }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout the pinned Zed CLI
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: .zed-cli
+          persist-credentials: false
+
+      - name: Build pinned Zed CLI
+        run: cargo build --locked --release --manifest-path .zed-cli/Cargo.toml --bin zed
+
+      - name: Resolve the certified package and verify native targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/.zed-cli/target/release/zed"
+          "$zed" install
+          root="zed_modules/opto-sync/opto-sync-clients"
+          test -f "$root/.zpkg.toml"
+          test -f "$root/clients/rust/Cargo.toml"
+          test -f "$root/clients/ts/package.json"
+          test -f "$root/clients/dart/pubspec.yaml"
+          grep -F 'opto-sync/opto-sync-clients' .zpkg.lock
+          grep -F 'sha256' .zpkg.lock
