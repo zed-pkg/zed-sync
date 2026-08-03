@@ -4,7 +4,8 @@
   "repository": "zed-pkg/zed-sync",
   "e2eRepository": "zed-pkg/zed-e2e",
   "rolloutIssue": "DEN-1386",
-  "releaseGate": "DEN-309",
+  "implementationIssue": "DEN-1153",
+  "releaseGates": ["DEN-309", "DEN-363"],
   "releaseState": "blocked-until-certified-package-published",
   "dependency": {
     "package": "opto-sync/opto-sync-clients",
@@ -28,30 +29,45 @@
   "persistence": {
     "web": ["indexeddb"],
     "mobile": ["sqlite"],
+    "desktop": ["sqlite"],
     "backend": ["postgres", "supabase"]
   },
-  "productCollections": ["products", "orders"],
+  "productCollections": [
+    "organizations",
+    "packages",
+    "package_versions",
+    "release_channels",
+    "installations"
+  ],
   "wrapperRetains": [
-    "zed public change envelopes and write-policy enums",
-    "registry authorization and tenant mapping",
-    "package-specific tombstone and retention policy",
+    "Zed package-domain envelopes and compatibility APIs",
+    "registry authorization, organization, actor, and tenant mapping",
+    "package/version validation and release policy",
     "backend endpoint and realtime wake configuration",
-    "zed telemetry and error mapping",
-    "compatibility fixtures and rollback mapping"
+    "Zed telemetry namespace and error mapping",
+    "product migrations, compatibility fixtures, and rollback mapping"
   ],
   "delegatesToOptoSync": [
-    "deterministic JSON reconciliation",
+    "deterministic JSON reconciliation and HLC ordering",
     "durable mutation identity and queue lifecycle",
-    "local-view rebase over server state",
+    "local-view rebase over authoritative state",
     "IndexedDB and SQLite client primitives",
     "checkpointed push/pull protocol loop",
     "background and realtime wake adapters"
   ],
+  "bootstrapBoundary": {
+    "zedCliIndependent": true,
+    "manifestAndLockParsingIndependent": true,
+    "registryResolutionIndependent": true,
+    "artifactInstallIndependent": true,
+    "runtimeDoesNotInvokeZed": true
+  },
   "invariants": {
     "renderLocalView": true,
     "realtimeIsWakeHint": true,
     "serverCursorIsAuthoritative": true,
     "mutableGitRefsForbidden": true,
-    "removeBespokeCoreOnlyAfterParity": true
+    "removeBespokeCoreOnlyAfterParity": true,
+    "zedBootstrapIndependent": true
   }
 }
