@@ -16,17 +16,11 @@ tag_format = "v{version}"
 smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/sdk/package.json\" && test -f \"$ZED_PKG_TEST_TARGET/dart/zed_sync/pubspec.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/protocol/change-event.schema.json\""
 exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "tmp/**", "**/*.log", ".DS_Store", "**/target/**", "**/node_modules/**", "**/.dart_tool/**", "**/build/**", "sdk/pkg/**"]
 
-[targets.repository]
-dir = "."
-name = "zed-sync-repository"
-
+# The root Rust/WASM core is the complete source artifact. Browser, Flutter,
+# Postgres, and protocol surfaces retain isolated target roots.
 [targets.rust]
 dir = "."
 adapter = "rust"
-
-[targets.rust.native]
-registry = "crates-io"
-package = "zed-sync-core"
 
 [targets.nodejs]
 dir = "sdk"
