@@ -3,10 +3,11 @@ name: opto-sync wrapper contract
 on:
   pull_request:
     paths:
-      - '.zpkg.toml'
-      - '.zpkg.lock'
-      - 'opto-sync-adapter.json'
-      - '.github/workflows/opto-sync-wrapper.yml'
+      - .zpkg.toml
+      - .zpkg.lock
+      - opto-sync-adapter.json
+      - tests/e2e/test_opto_sync_wrapper.py
+      - .github/workflows/opto-sync-wrapper.yml
   workflow_dispatch:
     inputs:
       live_install:
@@ -34,58 +35,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-
-      - name: Validate the staged wrapper and bootstrap boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import pathlib
-          import tomllib
-
-          root = pathlib.Path('.')
-          manifest = tomllib.loads((root / '.zpkg.toml').read_text())
-          lock = tomllib.loads((root / '.zpkg.lock').read_text())
-          profile = json.loads((root / 'opto-sync-adapter.json').read_text())
-
-          assert manifest['dependencies']['opto-sync/opto-sync-clients'] == '^0.2.0'
-          assert manifest['install']['dir'] == 'zed_modules'
-          assert profile['repository'] == 'zed-pkg/zed-sync'
-          assert profile['e2eRepository'] == 'zed-pkg/zed-e2e'
-          assert profile['implementationIssue'] == 'DEN-1153'
-          assert set(profile['releaseGates']) == {'DEN-309', 'DEN-363'}
-          assert all(profile['bootstrapBoundary'].values())
-          assert profile['invariants']['zedBootstrapIndependent'] is True
-          assert profile['wrapperRetains'] and profile['delegatesToOptoSync']
-
-          expected = {
-              'rust': ('opto-sync-client', 'clients/rust'),
-              'typescript': ('@opto-sync/client', 'clients/ts'),
-              'dart': ('opto_sync_client', 'clients/dart'),
-          }
-          for language, (package, suffix) in expected.items():
-              adapter = profile['nativeAdapters'][language]
-              assert adapter['package'] == package
-              assert adapter['path'].endswith(suffix)
-              assert '..' not in pathlib.PurePosixPath(adapter['path']).parts
-
-          packages = lock.get('package', [])
-          if profile['releaseState'] == 'blocked-until-certified-package-published':
-              assert lock.get('version') == 1 and packages == []
-          else:
-              package = next(
-                  p for p in packages
-                  if p.get('org') == 'opto-sync' and p.get('name') == 'opto-sync-clients'
-              )
-              for field in ('version', 'sha256', 'size', 'format', 'vcs_tag', 'vcs_commit', 'source'):
-                  assert package.get(field), f'missing lock field: {field}'
-              assert len(package['sha256']) == 64
-
-          serialized = json.dumps(profile).lower()
-          for mutable in ('refs/heads/main', 'branch = "main"', 'latest'):
-              assert mutable not in serialized
-          PY
+      - name: Run release-provenance, bootstrap-boundary, and registry-policy E2E contracts
+        run: python3 -m unittest discover -s tests/e2e -p 'test_opto_sync_wrapper.py' -v
 
   live-install:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.live_install }}
@@ -95,7 +46,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-
       - name: Checkout pinned Zed sources
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -103,17 +53,14 @@ jobs:
           ref: ${{ env.ZED_CLI_SHA }}
           path: .tools/zed-cli
           persist-credentials: false
-
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: zed-pkg/zed-interfaces
           ref: ${{ env.ZED_INTERFACES_SHA }}
           path: .tools/zed-interfaces
           persist-credentials: false
-
       - name: Build pinned Zed CLI with its pinned sibling interface crate
         run: cargo build --locked --release --manifest-path .tools/zed-cli/Cargo.toml --bin zed
-
       - name: Frozen-install and verify the Opto-Sync targets
         shell: bash
         run: |
@@ -150,14 +97,12 @@ jobs:
           ref: ${{ env.ZED_CLI_SHA }}
           path: .tools/zed-cli
           persist-credentials: false
-
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: zed-pkg/zed-interfaces
           ref: ${{ env.ZED_INTERFACES_SHA }}
           path: .tools/zed-interfaces
           persist-credentials: false
-
       - name: Prove the bootstrap graph excludes Opto-Sync and zed-sync
         shell: bash
         run: |
