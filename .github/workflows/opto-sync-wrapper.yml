@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
@@ -92,19 +92,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
       - name: Checkout pinned Zed sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: zed-pkg/zed-cli
           ref: ${{ env.ZED_CLI_SHA }}
           path: .tools/zed-cli
           persist-credentials: false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: zed-pkg/zed-interfaces
           ref: ${{ env.ZED_INTERFACES_SHA }}
@@ -144,14 +144,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout pinned Zed package-plane sources only
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: zed-pkg/zed-cli
           ref: ${{ env.ZED_CLI_SHA }}
           path: .tools/zed-cli
           persist-credentials: false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: zed-pkg/zed-interfaces
           ref: ${{ env.ZED_INTERFACES_SHA }}
