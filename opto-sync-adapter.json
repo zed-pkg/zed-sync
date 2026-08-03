@@ -1,0 +1,73 @@
+{
+  "$schema": "https://opto-sync.dev/schemas/downstream-adapter-v1.json",
+  "schemaVersion": 1,
+  "repository": "zed-pkg/zed-sync",
+  "e2eRepository": "zed-pkg/zed-e2e",
+  "rolloutIssue": "DEN-1386",
+  "implementationIssue": "DEN-1153",
+  "releaseGates": ["DEN-309", "DEN-363"],
+  "releaseState": "blocked-until-certified-package-published",
+  "dependency": {
+    "package": "opto-sync/opto-sync-clients",
+    "range": "^0.2.0",
+    "installRoot": "zed_modules/opto-sync/opto-sync-clients"
+  },
+  "nativeAdapters": {
+    "rust": {
+      "package": "opto-sync-client",
+      "path": "zed_modules/opto-sync/opto-sync-clients/clients/rust"
+    },
+    "typescript": {
+      "package": "@opto-sync/client",
+      "path": "zed_modules/opto-sync/opto-sync-clients/clients/ts"
+    },
+    "dart": {
+      "package": "opto_sync_client",
+      "path": "zed_modules/opto-sync/opto-sync-clients/clients/dart"
+    }
+  },
+  "persistence": {
+    "web": ["indexeddb"],
+    "mobile": ["sqlite"],
+    "desktop": ["sqlite"],
+    "backend": ["postgres", "supabase"]
+  },
+  "productCollections": [
+    "organizations",
+    "packages",
+    "package_versions",
+    "release_channels",
+    "installations"
+  ],
+  "wrapperRetains": [
+    "Zed package-domain envelopes and compatibility APIs",
+    "registry authorization, organization, actor, and tenant mapping",
+    "package/version validation and release policy",
+    "backend endpoint and realtime wake configuration",
+    "Zed telemetry namespace and error mapping",
+    "product migrations, compatibility fixtures, and rollback mapping"
+  ],
+  "delegatesToOptoSync": [
+    "deterministic JSON reconciliation and HLC ordering",
+    "durable mutation identity and queue lifecycle",
+    "local-view rebase over authoritative state",
+    "IndexedDB and SQLite client primitives",
+    "checkpointed push/pull protocol loop",
+    "background and realtime wake adapters"
+  ],
+  "bootstrapBoundary": {
+    "zedCliIndependent": true,
+    "manifestAndLockParsingIndependent": true,
+    "registryResolutionIndependent": true,
+    "artifactInstallIndependent": true,
+    "runtimeDoesNotInvokeZed": true
+  },
+  "invariants": {
+    "renderLocalView": true,
+    "realtimeIsWakeHint": true,
+    "serverCursorIsAuthoritative": true,
+    "mutableGitRefsForbidden": true,
+    "removeBespokeCoreOnlyAfterParity": true,
+    "zedBootstrapIndependent": true
+  }
+}

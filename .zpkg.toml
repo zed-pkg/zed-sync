@@ -1,0 +1,20 @@
+[package]
+org = "zed-pkg"
+name = "zed-sync"
+version = "0.1.0"
+description = "Zed-specific sync facade backed by the certified opto-sync client SDK"
+license = "MIT"
+keywords = ["sync", "local-first", "indexeddb", "sqlite", "postgres", "supabase"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/zed-pkg/zed-sync"
+
+# Whole-repository package by design. The native Rust, TypeScript, Dart, and
+# Gleam clients still resolve the same pinned syncer.c core inside this artifact.
+# Do not replace this with a mutable branch or copy a language binding locally.
+[dependencies]
+"opto-sync/opto-sync-clients" = "^0.2.0"
+
+[install]
+dir = "zed_modules"
