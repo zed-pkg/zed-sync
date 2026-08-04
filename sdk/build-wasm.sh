@@ -9,7 +9,7 @@
 # wasm-bindgen. The preferred path is wasm-pack; if it is not installed we fall
 # back to cargo + wasm-bindgen directly.
 set -euo pipefail
-cd "$(dirname "$0")/.."   # repo root
+cd "$(dirname "$0")/.." # repo root
 
 WASM_BINDGEN_VERSION="0.2.126"
 
