@@ -14,7 +14,8 @@ enum WriteMode {
   const WriteMode(this.wire);
 
   static WriteMode fromWire(String w) =>
-      WriteMode.values.firstWhere((m) => m.wire == w, orElse: () => throw ArgumentError('unknown write mode "$w"'));
+      WriteMode.values.firstWhere((m) => m.wire == w,
+          orElse: () => throw ArgumentError('unknown write mode "$w"'));
 }
 
 enum ErrorPolicy {
@@ -26,11 +27,14 @@ enum ErrorPolicy {
   final String wire;
   const ErrorPolicy(this.wire);
 
-  bool get shouldThrow => this == ErrorPolicy.throwOnly || this == ErrorPolicy.throwAndEmit;
-  bool get shouldEmit => this == ErrorPolicy.emitOnly || this == ErrorPolicy.throwAndEmit;
+  bool get shouldThrow =>
+      this == ErrorPolicy.throwOnly || this == ErrorPolicy.throwAndEmit;
+  bool get shouldEmit =>
+      this == ErrorPolicy.emitOnly || this == ErrorPolicy.throwAndEmit;
 
   static ErrorPolicy fromWire(String w) =>
-      ErrorPolicy.values.firstWhere((p) => p.wire == w, orElse: () => throw ArgumentError('unknown error policy "$w"'));
+      ErrorPolicy.values.firstWhere((p) => p.wire == w,
+          orElse: () => throw ArgumentError('unknown error policy "$w"'));
 }
 
 enum ConflictResolution {
@@ -40,6 +44,8 @@ enum ConflictResolution {
   final String wire;
   const ConflictResolution(this.wire);
 
-  static ConflictResolution fromWire(String w) => ConflictResolution.values
-      .firstWhere((c) => c.wire == w, orElse: () => throw ArgumentError('unknown conflict resolution "$w"'));
+  static ConflictResolution fromWire(String w) =>
+      ConflictResolution.values.firstWhere((c) => c.wire == w,
+          orElse: () =>
+              throw ArgumentError('unknown conflict resolution "$w"'));
 }

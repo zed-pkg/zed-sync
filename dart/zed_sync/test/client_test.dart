@@ -17,27 +17,38 @@ SyncClient _client(MemoryStorage store, List<ChangeEvent> sent) => SyncClient(
     );
 
 void main() {
-  test('MemoryStorage keeps rows and an ordered queue retired by write key', () async {
+  test('MemoryStorage keeps rows and an ordered queue retired by write key',
+      () async {
     final store = MemoryStorage();
     expect(await store.getRow('products', 'p1'), isNull);
 
-    await store.putRow('products', 'p1',
-        const StoredRow(row: {'id': 'p1', 'n': 1}, version: Hlc(100, 0, 'srv'), dirty: false));
+    await store.putRow(
+        'products',
+        'p1',
+        const StoredRow(
+            row: {'id': 'p1', 'n': 1},
+            version: Hlc(100, 0, 'srv'),
+            dirty: false));
     final got = await store.getRow('products', 'p1');
     expect(got, isNotNull);
     expect(got!.row!['n'], 1);
 
-    await store.enqueue(const QueuedWrite('products', 'p1', Op.upsert, null, Hlc(100, 0, 'dev'), 'k1'));
-    await store.enqueue(const QueuedWrite('products', 'p2', Op.upsert, null, Hlc(101, 0, 'dev'), 'k2'));
+    await store.enqueue(const QueuedWrite(
+        'products', 'p1', Op.upsert, null, Hlc(100, 0, 'dev'), 'k1'));
+    await store.enqueue(const QueuedWrite(
+        'products', 'p2', Op.upsert, null, Hlc(101, 0, 'dev'), 'k2'));
     final pending = await store.pending();
-    expect(pending.map((w) => w.key), ['k1', 'k2'], reason: 'insertion order preserved');
+    expect(pending.map((w) => w.key), ['k1', 'k2'],
+        reason: 'insertion order preserved');
 
-    await store.retire(const QueuedWrite('products', 'p1', Op.upsert, null, Hlc(100, 0, 'dev'), 'k1'));
+    await store.retire(const QueuedWrite(
+        'products', 'p1', Op.upsert, null, Hlc(100, 0, 'dev'), 'k1'));
     final after = await store.pending();
     expect(after.single.key, 'k2', reason: 'retired by key');
   });
 
-  test('delete() optimistically writes a null-row tombstone through the queue', () async {
+  test('delete() optimistically writes a null-row tombstone through the queue',
+      () async {
     final store = MemoryStorage();
     final sent = <ChangeEvent>[];
     final client = _client(store, sent);
@@ -61,7 +72,12 @@ void main() {
     const version = Hlc(100, 0, 'srv');
 
     await client.applyChange(ChangeEvent(
-        table: 'products', op: Op.upsert, id: 'p1', version: version, atMs: 100, row: {'id': 'p1', 'n': 1}));
+        table: 'products',
+        op: Op.upsert,
+        id: 'p1',
+        version: version,
+        atMs: 100,
+        row: {'id': 'p1', 'n': 1}));
     // Same version, server-normalized payload -> refreshed (not ignored).
     final outcome = await client.applyChange(ChangeEvent(
         table: 'products',
@@ -73,7 +89,8 @@ void main() {
 
     expect(outcome, 'refreshed');
     final row = await store.getRow('products', 'p1');
-    expect(row!.row!['normalized'], true, reason: 'stored payload refreshed at equal version');
+    expect(row!.row!['normalized'], true,
+        reason: 'stored payload refreshed at equal version');
   });
 
   test('applyChange does not refresh a dirty equal-version row', () async {
@@ -91,9 +108,15 @@ void main() {
     final local = await store.getRow('products', 'p1');
 
     final outcome = await client.applyChange(ChangeEvent(
-        table: 'products', op: Op.upsert, id: 'p1', version: local!.version, atMs: 1, row: {'id': 'p1', 'server': true}));
+        table: 'products',
+        op: Op.upsert,
+        id: 'p1',
+        version: local!.version,
+        atMs: 1,
+        row: {'id': 'p1', 'server': true}));
 
-    expect(outcome, 'ignored', reason: 'dirty local is never silently refreshed');
+    expect(outcome, 'ignored',
+        reason: 'dirty local is never silently refreshed');
     final after = await store.getRow('products', 'p1');
     expect(after!.row!['server'], isNull, reason: 'dirty payload preserved');
     expect(after.dirty, isTrue);

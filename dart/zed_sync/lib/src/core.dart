@@ -46,7 +46,8 @@ class LocalRow {
   const LocalRow(this.version, {this.dirty = false});
 
   factory LocalRow.fromJson(Map<String, dynamic> j) =>
-      LocalRow(Hlc.fromJson(j['version'] as Map<String, dynamic>), dirty: j['dirty'] as bool? ?? false);
+      LocalRow(Hlc.fromJson(j['version'] as Map<String, dynamic>),
+          dirty: j['dirty'] as bool? ?? false);
 }
 
 /// The reconcile decision, encoded to match the shared fixture:
@@ -79,7 +80,9 @@ class Ignore extends Reconcile {
 /// incoming.version, incoming.op).
 Reconcile reconcile(LocalRow? local, ChangeEvent incoming) {
   if (local == null) {
-    return incoming.op == Op.upsert ? const Apply() : const Ignore('AlreadyApplied');
+    return incoming.op == Op.upsert
+        ? const Apply()
+        : const Ignore('AlreadyApplied');
   }
   final cmp = incoming.version.compareTo(local.version);
   if (cmp < 0) return const Ignore('Stale');
@@ -93,5 +96,13 @@ Hlc? onAck(LocalRow local, Hlc committedVersion) =>
     local.version.compareTo(committedVersion) > 0 ? null : committedVersion;
 
 /// True when [incoming] is the realtime echo of this queued write.
-bool isOwnEcho({required String table, required String id, required Op op, required String key, required ChangeEvent incoming}) =>
-    incoming.table == table && incoming.id == id && incoming.op == op && incoming.writeKey == key;
+bool isOwnEcho(
+        {required String table,
+        required String id,
+        required Op op,
+        required String key,
+        required ChangeEvent incoming}) =>
+    incoming.table == table &&
+    incoming.id == id &&
+    incoming.op == op &&
+    incoming.writeKey == key;
