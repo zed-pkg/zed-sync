@@ -11,6 +11,15 @@ import { compareHlc } from "../src/hlc.mjs";
 
 const TABLES = ["docs"];
 
+// A dirty LOCAL_ONLY edit is stamped from the editing replica's wall clock; the
+// "newer" server change must land at a strictly higher wall_ms to be causally
+// newer. Back-to-back in-memory ops can share a millisecond, which collides the
+// HLC — equal wall_ms, and the editor's accumulated counter can exceed the
+// server's per-row counter (which resets when the wall advances), so the stale
+// local edit would wrongly compare newer. A few ms of real time makes the
+// server change unambiguously later — the scenario these tests actually model.
+const clockGap = () => new Promise((resolve) => setTimeout(resolve, 5));
+
 test("server_wins: a newer server change overrides a dirty local edit and drops its queued write", async () => {
   const hub = new Hub(new SimServer());
   const a = connectReplica(hub, { actor: "dev-A", tables: TABLES });
@@ -31,6 +40,7 @@ test("server_wins: a newer server change overrides a dirty local edit and drops 
   assert.equal((await b.store.pending()).length, 1, "B has a queued dirty edit");
 
   // A commits a newer change to the same row; it reaches B over the live feed.
+  await clockGap();
   await a.client.write("docs", "d1", { id: "d1", title: "A wins", body: "y" });
   await hub.settle();
 
@@ -80,6 +90,7 @@ test("last_write_wins converges identically to server_wins for server-authored c
   await a.client.write("docs", "d1", { id: "d1", n: 0 });
   await hub.settle();
   await b.client.write("docs", "d1", { id: "d1", n: 1 }, { mode: WriteMode.LOCAL_ONLY }); // dirty
+  await clockGap();
   await a.client.write("docs", "d1", { id: "d1", n: 2 }); // newer server change
   await hub.settle();
 
