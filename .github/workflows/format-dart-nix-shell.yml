@@ -42,6 +42,7 @@ jobs:
           nix develop --no-update-lock-file -c bash -lc '
             set -euo pipefail
             cd dart/zed_sync
+            dart pub get
             dart format .
             dart analyze
             dart test
