@@ -1,0 +1,74 @@
+name: format Dart package in pinned Nix shell
+
+on:
+  push:
+    branches:
+      - alexanderdmills/den-359-sync-nix-agent-shell
+    paths:
+      - .github/workflows/format-dart-nix-shell.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: format-dart-nix-shell-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: alexanderdmills/den-359-sync-nix-agent-shell
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install pinned Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Format and validate the Dart package
+        run: |
+          set -euo pipefail
+          nix develop --no-update-lock-file -c bash -lc '
+            set -euo pipefail
+            cd dart/zed_sync
+            dart format .
+            dart analyze
+            dart test
+          '
+          git diff --check
+
+      - name: Commit ordinary formatted Dart source and remove helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm .github/workflows/format-dart-nix-shell.yml
+          git add \
+            dart/zed_sync/lib/src/client.dart \
+            dart/zed_sync/lib/src/core.dart \
+            dart/zed_sync/lib/src/hlc.dart \
+            dart/zed_sync/lib/src/memory_storage.dart \
+            dart/zed_sync/lib/src/policy.dart \
+            dart/zed_sync/test/client_test.dart \
+            dart/zed_sync/test/conformance_test.dart \
+            dart/zed_sync/test/e2e_test.dart \
+            dart/zed_sync/test/hlc_test.dart \
+            .github/workflows/format-dart-nix-shell.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style: format Dart sync package'
+          git push \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:alexanderdmills/den-359-sync-nix-agent-shell
