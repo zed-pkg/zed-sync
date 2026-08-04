@@ -14,6 +14,7 @@ protocol/conformance.json ── the shared golden fixture (reconcile · echoes 
 
 end-to-end (per runtime):
    ├── JS    sdk/test/e2e_*.test.mjs   — SimServer + the REAL transports
+   ├── JS    sdk/test/browser/idb.browser.test.mjs — IndexedDbStore in real headless Chromium
    └── Dart  dart/zed_sync/test/e2e_test.dart — client lifecycle vs an in-memory server
 ```
 
@@ -92,6 +93,23 @@ stale-echo preservation, offline queue → `flushQueue`, two-device convergence 
 delete tombstones, and `synced_at` stamping. `hlc_test.dart` mirrors the Rust
 HLC unit tests (tick, observe, drift clamp, encoding, actor tiebreak).
 
+### Browser — `sdk/test/browser/idb.browser.test.mjs`
+
+`IndexedDbStore` is the durability boundary on web and mobile-web, so it is
+proven in **real headless Chromium** (Playwright), not against a fake IDB.
+`server.mjs` serves the repo over HTTP — the build-free ESM SDK is `import`ed by
+URL, which `file://`/`data:` cannot do — and the scenario runs inside the page
+against `window.indexedDB`. The shipped `IndexedDbStore` + optimistic
+`SyncClient` are driven end to end, covering the `agents.md` requirements for
+**restart recovery** (a fresh connection to the same DB still sees the committed
+row and the queued offline writes) and **disconnects** (`local_only` writes stay
+durably queued and coalesced), plus reconcile of a newer server version over
+real IDB.
+
+It is **not** part of `npm test` (that globs `test/*.test.mjs`, not subdirs) and
+**self-skips** if Playwright is absent, so a plain checkout still passes. Run it
+with `npm --prefix sdk run test:browser`.
+
 ## Running everything
 
 ```sh
@@ -102,12 +120,15 @@ cargo test
 npm --prefix sdk test
 npm --prefix sdk run typecheck
 
+# IndexedDbStore in real headless Chromium (installs a browser on first run)
+npm --prefix sdk run test:browser
+
 # Dart package (conformance + hlc + e2e)
 cd dart/zed_sync && dart pub get && dart analyze lib && dart test
 ```
 
-CI (`.github/workflows/ci.yml`) runs all three as separate jobs on every push
-and PR.
+CI (`.github/workflows/ci.yml`) runs these as the `rust-core`, `js-sdk`,
+`browser`, `dart`, and `wasm-parity` jobs on every push and PR.
 
 ## Registry-stack e2e (separate repo)
 
