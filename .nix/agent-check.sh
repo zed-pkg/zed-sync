@@ -65,7 +65,7 @@ run_stage() {
     wasm)
       ensure_rust
       ./sdk/build-wasm.sh
-      node --test sdk/test/parity.test.mjs
+      node --test sdk/test/wasm-parity.test.mjs
       ;;
     all)
       local child
