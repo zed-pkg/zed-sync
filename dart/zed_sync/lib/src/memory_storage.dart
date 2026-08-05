@@ -14,7 +14,8 @@ class MemoryStorage implements SyncStorage {
   final List<QueuedWrite> _queue = [];
 
   @override
-  Future<StoredRow?> getRow(String table, String id) async => _rows[_rowKey(table, id)];
+  Future<StoredRow?> getRow(String table, String id) async =>
+      _rows[_rowKey(table, id)];
 
   @override
   Future<void> putRow(String table, String id, StoredRow row) async {

@@ -17,7 +17,11 @@ class StoredRow {
   /// it has. A dirty write preserves the previous value.
   final int? syncedAtMs;
 
-  const StoredRow({required this.row, required this.version, required this.dirty, this.syncedAtMs});
+  const StoredRow(
+      {required this.row,
+      required this.version,
+      required this.dirty,
+      this.syncedAtMs});
 }
 
 /// A durable queued optimistic write awaiting acknowledgement.
@@ -28,7 +32,8 @@ class QueuedWrite {
   final Map<String, dynamic>? payload;
   final Hlc baseVersion;
   final String key;
-  const QueuedWrite(this.table, this.id, this.op, this.payload, this.baseVersion, this.key);
+  const QueuedWrite(
+      this.table, this.id, this.op, this.payload, this.baseVersion, this.key);
 }
 
 /// Persistence boundary. Implement over Drift/Hive/Isar or a JSON file.
@@ -72,21 +77,26 @@ class SyncClient {
     this.telemetry,
   }) : _clock = Clock(actor);
 
-  String _nextKey() => '$actor-${DateTime.now().millisecondsSinceEpoch}-${_keySeq++}';
+  String _nextKey() =>
+      '$actor-${DateTime.now().millisecondsSinceEpoch}-${_keySeq++}';
 
-  void _emit(String event, [Map<String, dynamic> attrs = const {}]) => telemetry?.call(event, attrs);
+  void _emit(String event, [Map<String, dynamic> attrs = const {}]) =>
+      telemetry?.call(event, attrs);
 
   /// Apply an incoming change (from either transport) through reconcile.
   /// Returns "applied" | "ignored" | "conflict-resolved" | "refreshed".
   Future<String> applyChange(ChangeEvent incoming) async {
     _clock.observe(incoming.version);
     final existing = await storage.getRow(incoming.table, incoming.id);
-    final local = existing == null ? null : LocalRow(existing.version, dirty: existing.dirty);
+    final local = existing == null
+        ? null
+        : LocalRow(existing.version, dirty: existing.dirty);
     final decision = reconcile(local, incoming);
 
     if (decision is Apply) {
       await _adopt(incoming);
-      _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'applied'});
+      _emit('sync.change',
+          {'table': incoming.table, 'id': incoming.id, 'outcome': 'applied'});
       return 'applied';
     }
     if (decision is Conflict) {
@@ -95,20 +105,30 @@ class SyncClient {
       if (adopt) {
         await _adopt(incoming);
         for (final w in await storage.pending()) {
-          if (w.table == incoming.table && w.id == incoming.id) await storage.retire(w);
+          if (w.table == incoming.table && w.id == incoming.id)
+            await storage.retire(w);
         }
-        _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'conflict-resolved'});
+        _emit('sync.change', {
+          'table': incoming.table,
+          'id': incoming.id,
+          'outcome': 'conflict-resolved'
+        });
         return 'conflict-resolved';
       }
     }
     // Ignore. Refresh the stored payload for an equal-version clean row so a
     // server-normalized echo cannot be hidden by a racing ack.
-    if (existing != null && !existing.dirty && decision is Ignore && decision.reason == 'AlreadyApplied') {
+    if (existing != null &&
+        !existing.dirty &&
+        decision is Ignore &&
+        decision.reason == 'AlreadyApplied') {
       await _adopt(incoming);
-      _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'refreshed'});
+      _emit('sync.change',
+          {'table': incoming.table, 'id': incoming.id, 'outcome': 'refreshed'});
       return 'refreshed';
     }
-    _emit('sync.change', {'table': incoming.table, 'id': incoming.id, 'outcome': 'ignored'});
+    _emit('sync.change',
+        {'table': incoming.table, 'id': incoming.id, 'outcome': 'ignored'});
     return 'ignored';
   }
 
@@ -136,13 +156,28 @@ class SyncClient {
     final p = policy ?? errorPolicy;
     final version = _clock.tick();
     final key = _nextKey();
-    _emit('sync.write.start', {'table': table, 'id': id, 'op': op.name, 'mode': m.wire});
+    _emit('sync.write.start',
+        {'table': table, 'id': id, 'op': op.name, 'mode': m.wire});
 
     if (m == WriteMode.serverFirst || m == WriteMode.serverOnly) {
       try {
-        final committed = await _doSend(ChangeEvent(table: table, op: op, id: id, version: version, atMs: version.wallMs, row: row, writeKey: key));
+        final committed = await _doSend(ChangeEvent(
+            table: table,
+            op: op,
+            id: id,
+            version: version,
+            atMs: version.wallMs,
+            row: row,
+            writeKey: key));
         if (m == WriteMode.serverFirst) {
-          await storage.putRow(table, id, StoredRow(row: row, version: committed, dirty: false, syncedAtMs: DateTime.now().millisecondsSinceEpoch));
+          await storage.putRow(
+              table,
+              id,
+              StoredRow(
+                  row: row,
+                  version: committed,
+                  dirty: false,
+                  syncedAtMs: DateTime.now().millisecondsSinceEpoch));
         }
         _emit('sync.write.acked', {'table': table, 'id': id, 'via': 'server'});
         return WriteResult(WriteStatus.acked, committed);
@@ -153,25 +188,49 @@ class SyncClient {
     }
 
     final existing = await storage.getRow(table, id);
-    await storage.putRow(table, id, StoredRow(row: row, version: version, dirty: true, syncedAtMs: existing?.syncedAtMs));
+    await storage.putRow(
+        table,
+        id,
+        StoredRow(
+            row: row,
+            version: version,
+            dirty: true,
+            syncedAtMs: existing?.syncedAtMs));
     final queued = QueuedWrite(table, id, op, row, version, key);
     await storage.enqueue(queued);
     _emit('sync.write.local', {'table': table, 'id': id});
 
-    if (m == WriteMode.localOnly) return WriteResult(WriteStatus.local, version);
+    if (m == WriteMode.localOnly)
+      return WriteResult(WriteStatus.local, version);
 
     try {
-      final committed = await _doSend(ChangeEvent(table: table, op: op, id: id, version: version, atMs: version.wallMs, row: row, writeKey: key));
+      final committed = await _doSend(ChangeEvent(
+          table: table,
+          op: op,
+          id: id,
+          version: version,
+          atMs: version.wallMs,
+          row: row,
+          writeKey: key));
       final current = await storage.getRow(table, id);
-      if (current != null && onAck(LocalRow(current.version), committed) != null) {
-        await storage.putRow(table, id, StoredRow(row: current.row, version: committed, dirty: false, syncedAtMs: DateTime.now().millisecondsSinceEpoch));
+      if (current != null &&
+          onAck(LocalRow(current.version), committed) != null) {
+        await storage.putRow(
+            table,
+            id,
+            StoredRow(
+                row: current.row,
+                version: committed,
+                dirty: false,
+                syncedAtMs: DateTime.now().millisecondsSinceEpoch));
       }
       await storage.retire(queued);
       _emit('sync.write.acked', {'table': table, 'id': id});
       return WriteResult(WriteStatus.acked, committed);
     } catch (err) {
       _emit('sync.write.queued', {'table': table, 'id': id});
-      if (m == WriteMode.optimisticAwaitAck) _surface(err, {'table': table, 'id': id}, p);
+      if (m == WriteMode.optimisticAwaitAck)
+        _surface(err, {'table': table, 'id': id}, p);
       return WriteResult(WriteStatus.queued, version);
     }
   }
@@ -193,7 +252,8 @@ class SyncClient {
   }
 
   void _surface(Object err, Map<String, dynamic> ctx, ErrorPolicy policy) {
-    if (policy.shouldEmit) _emit('sync.write.failed', {...ctx, 'error': err.toString()});
+    if (policy.shouldEmit)
+      _emit('sync.write.failed', {...ctx, 'error': err.toString()});
     if (policy.shouldThrow) throw err;
   }
 
@@ -203,10 +263,25 @@ class SyncClient {
     var sent = 0;
     for (final w in await storage.pending()) {
       try {
-        final committed = await _doSend(ChangeEvent(table: w.table, op: w.op, id: w.id, version: w.baseVersion, atMs: w.baseVersion.wallMs, row: w.payload, writeKey: w.key));
+        final committed = await _doSend(ChangeEvent(
+            table: w.table,
+            op: w.op,
+            id: w.id,
+            version: w.baseVersion,
+            atMs: w.baseVersion.wallMs,
+            row: w.payload,
+            writeKey: w.key));
         final current = await storage.getRow(w.table, w.id);
-        if (current != null && onAck(LocalRow(current.version), committed) != null) {
-          await storage.putRow(w.table, w.id, StoredRow(row: current.row, version: committed, dirty: false, syncedAtMs: DateTime.now().millisecondsSinceEpoch));
+        if (current != null &&
+            onAck(LocalRow(current.version), committed) != null) {
+          await storage.putRow(
+              w.table,
+              w.id,
+              StoredRow(
+                  row: current.row,
+                  version: committed,
+                  dirty: false,
+                  syncedAtMs: DateTime.now().millisecondsSinceEpoch));
         }
         await storage.retire(w);
         sent++;

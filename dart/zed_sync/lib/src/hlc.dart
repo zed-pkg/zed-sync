@@ -14,7 +14,8 @@ class Hlc {
         (json['actor'] ?? 'srv').toString(),
       );
 
-  Map<String, dynamic> toJson() => {'wall_ms': wallMs, 'counter': counter, 'actor': actor};
+  Map<String, dynamic> toJson() =>
+      {'wall_ms': wallMs, 'counter': counter, 'actor': actor};
 
   /// Total order: wallMs, then counter, then actor.
   int compareTo(Hlc other) {

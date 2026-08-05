@@ -93,6 +93,19 @@ npm --prefix sdk run typecheck               # validate the shipped .d.ts
 cd dart/zed_sync && dart test                # Dart core + shared conformance
 ```
 
+The pinned contributor environment runs every runtime, formatter, WASM rebuild,
+and parity check through one non-interactive entrypoint:
+
+```sh
+nix develop --no-update-lock-file -c agent-check
+```
+
+`agent-check` treats canonical formatting as part of the cross-runtime contract:
+`cargo fmt`, `shfmt`, and `dart format` must produce a clean checkout before the
+Rust, TypeScript, Dart, WASM, and shared-conformance suites are accepted. This
+keeps generated or platform-specific formatting drift from hiding semantic
+parity failures.
+
 zed-sync is standalone — it shares patterns with, but has **no dependency on**,
 `ORESoftware/k8s-libs-and-shared-defs`.
 
