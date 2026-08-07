@@ -1,0 +1,125 @@
+name: opto-sync wrapper contract
+
+on:
+  pull_request:
+    paths:
+      - .zpkg.toml
+      - .zpkg.lock
+      - opto-sync-adapter.json
+      - tests/e2e/test_opto_sync_wrapper.py
+      - .github/workflows/opto-sync-wrapper.yml
+  workflow_dispatch:
+    inputs:
+      live_install:
+        description: Install and inspect the certified artifact from the committed lock
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZED_CLI_SHA: a850dbcc799aeaccf1093741ab58439a049c14c9
+  ZED_INTERFACES_SHA: c2e049006453c26ca8ca291783f681fce75cb01f
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Run release-provenance, bootstrap-boundary, and registry-policy E2E contracts
+        run: python3 -m unittest discover -s tests/e2e -p 'test_opto_sync_wrapper.py' -v
+
+  live-install:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live_install }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Checkout pinned Zed sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: .tools/zed-cli
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: .tools/zed-interfaces
+          persist-credentials: false
+      - name: Build pinned Zed CLI with its pinned sibling interface crate
+        run: cargo build --locked --release --manifest-path .tools/zed-cli/Cargo.toml --bin zed
+      - name: Frozen-install and verify the Opto-Sync targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/.tools/zed-cli/target/release/zed"
+          "$zed" install --frozen --install-mode copy
+          root="zed_modules/opto-sync/opto-sync-clients"
+          test -f "$root/.zpkg.toml"
+          test -f "$root/clients/rust/Cargo.toml"
+          test -f "$root/clients/ts/package.json"
+          test -f "$root/clients/dart/pubspec.yaml"
+          python3 - <<'PY'
+          import re
+          import tomllib
+          package = next(
+              p for p in tomllib.loads(open('.zpkg.lock').read()).get('package', [])
+              if p.get('org') == 'opto-sync' and p.get('name') == 'opto-sync-clients'
+          )
+          assert re.fullmatch(r'[0-9a-f]{64}', package['sha256'])
+          assert package['size'] > 0
+          assert package['vcs_tag']
+          assert re.fullmatch(r'[0-9a-f]{40}', package['vcs_commit'])
+          assert package['source']
+          PY
+
+  bootstrap-independence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pinned Zed package-plane sources only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: .tools/zed-cli
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: .tools/zed-interfaces
+          persist-credentials: false
+      - name: Prove the bootstrap graph excludes Opto-Sync and zed-sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import tomllib
+
+          for manifest_path in (
+              pathlib.Path('.tools/zed-cli/Cargo.toml'),
+              pathlib.Path('.tools/zed-interfaces/Cargo.toml'),
+          ):
+              manifest = tomllib.loads(manifest_path.read_text())
+              dependencies = {}
+              for section in ('dependencies', 'build-dependencies', 'dev-dependencies'):
+                  dependencies.update(manifest.get(section, {}))
+              forbidden = [name for name in dependencies if 'opto' in name.lower() or name == 'zed-sync']
+              assert forbidden == [], f'{manifest_path}: forbidden bootstrap dependencies: {forbidden}'
+          PY
+          cargo metadata --locked --no-deps --format-version 1 --manifest-path .tools/zed-cli/Cargo.toml > /dev/null
