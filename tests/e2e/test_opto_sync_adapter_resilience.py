@@ -22,7 +22,7 @@ class AdapterResilience(unittest.TestCase):
             package, suffix = NATIVE[language]; self.assertEqual(adapter["package"], package); self.assertNotIn("..", PurePosixPath(adapter["path"]).parts); self.assertTrue(adapter["path"].startswith(INSTALL + "/")); self.assertTrue(adapter["path"].endswith(suffix)); self.assertNotIn(adapter["path"], seen); seen.add(adapter["path"])
     def test_wrapper_and_engine_responsibilities_do_not_overlap(self):
         retained, delegated = self.profile["wrapperRetains"], self.profile["delegatesToOptoSync"]; self.assertGreaterEqual(len(retained), 3); self.assertGreaterEqual(len(delegated), 5); self.assertFalse(set(retained) & set(delegated)); text = " ".join(delegated).lower()
-        for concept in ("reconciliation", "mutation identity", "durable queue", "indexeddb", "sqlite", "checkpoint"): self.assertIn(concept, text)
+        for concept in ("reconciliation", "durable mutation identity", "queue lifecycle", "indexeddb", "sqlite", "checkpoint"): self.assertIn(concept, text)
     def test_sensitive_and_blob_collections_are_excluded(self):
         collections = self.profile["productCollections"]; self.assertTrue(collections); self.assertEqual(len(collections), len(set(collections)))
         for collection in collections:

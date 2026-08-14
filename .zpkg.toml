@@ -10,6 +10,15 @@ keywords = ["sync", "offline-first", "wasm", "indexeddb", "polyglot"]
 vcs = "git"
 url = "https://github.com/zed-pkg/zed-sync"
 
+# The product wrapper consumes the certified, whole-repository Opto Sync SDK.
+# Keep this dependency aligned with opto-sync-adapter.json; the empty lock is a
+# deliberate fail-closed release gate until the certified artifact is published.
+[dependencies]
+"opto-sync/opto-sync-clients" = "^0.2.0"
+
+[install]
+dir = "zed_modules"
+
 [publish]
 include_readme = true
 tag_format = "v{version}"
