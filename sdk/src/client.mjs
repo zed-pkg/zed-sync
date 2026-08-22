@@ -4,7 +4,7 @@
 // and telemetry. Every write names its optimism level and error surface with
 // ENUMS (never a boolean), and every lifecycle step emits a telemetry event.
 
-import { reconcile, onAck, isOwnEcho, resolveConflict } from "./core.mjs";
+import { reconcile, isOwnEcho, resolveConflict } from "./core.mjs";
 import { deepMerge } from "./merge.mjs";
 import { Clock } from "./hlc.mjs";
 import {
@@ -49,6 +49,9 @@ export class SyncClient {
     onError,
   }) {
     if (!store) throw new TypeError("SyncClient requires a store");
+    if (typeof store.settleAck !== "function") {
+      throw new TypeError("SyncClient requires an atomic store.settleAck implementation");
+    }
     if (!actor) throw new TypeError("SyncClient requires an actor id");
     this.store = store;
     this.actor = actor;
@@ -202,7 +205,7 @@ export class SyncClient {
     // optimistic_queue / optimistic_await_ack: send now.
     try {
       const ack = await this.#doSend({ table, op, id, row: stored, version, write_key: wkey });
-      await this.#settleAck(table, id, qseq, ack, version);
+      await this.#settleAck(table, id, qseq, wkey, ack, version);
       this.telemetry.event("sync.write.acked", ctx);
       return { status: "acked", version: ack?.committed_version ?? version };
     } catch (err) {
@@ -222,18 +225,16 @@ export class SyncClient {
     return this.send(change);
   }
 
-  async #settleAck(table, id, qseq, ack, baseVersion) {
-    const current = await this.store.getRow(table, id);
-    if (!current) return;
-    const outcome = onAck({ version: current.meta.version }, {
-      id, committed_version: ack?.committed_version ?? baseVersion,
+  async #settleAck(table, id, qseq, writeKey, ack, baseVersion) {
+    await this.store.settleAck({
+      table,
+      id,
+      seq: qseq,
+      writeKey,
+      baseVersion,
+      committedVersion: ack?.committed_version ?? baseVersion,
+      at: Date.now(),
     });
-    if (outcome !== "Superseded") {
-      await this.store.putRow(table, id, current.row, {
-        version: outcome.Adopt, dirty: false, synced_at_ms: Date.now(),
-      });
-    }
-    await this.store.retire(qseq);
   }
 
   /**
@@ -250,7 +251,7 @@ export class SyncClient {
         const ack = await this.#doSend({
           table: w.table, op: w.op, id: w.id, row: w.payload, version: w.base_version, write_key: w.key,
         });
-        await this.#settleAck(w.table, w.id, w.seq, ack, w.base_version);
+        await this.#settleAck(w.table, w.id, w.seq, w.key, ack, w.base_version);
         sent += 1;
       } catch (err) {
         this.telemetry.event("sync.flush.failed", { table: w.table, id: w.id, error: err });

@@ -1,0 +1,51 @@
+name: formal-methods
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  write-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Keep these argv identical to `fmctl --dry-run`; the repository-local
+      # schema-v1 manifest is the source of the claim and resource bounds.
+      - name: Typecheck Quint specification
+        run: >-
+          npx --yes --package=@informalsystems/quint@0.32.0 quint typecheck
+          formal/write_lifecycle.qnt
+      - name: Simulate invariants and reachability witnesses
+        run: >-
+          npx --yes --package=@informalsystems/quint@0.32.0 quint run
+          formal/write_lifecycle.qnt
+          --main=write_lifecycle
+          --init=init
+          --step=step
+          --backend=typescript
+          --max-samples=10000
+          --max-steps=24
+          --invariants write_lifecycle_safety
+          --witnesses late_ack_preserves_newest_write retry_after_disconnect_reached server_wins_conflict_reached duplicate_ack_reached
+      - name: Exhaustively verify the finite state space with TLC
+        run: >-
+          npx --yes --package=@informalsystems/quint@0.32.0 quint verify
+          formal/write_lifecycle.qnt
+          --main=write_lifecycle
+          --init=init
+          --step=step
+          --backend=tlc
+          --invariants write_lifecycle_safety

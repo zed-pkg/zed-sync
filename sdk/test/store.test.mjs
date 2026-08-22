@@ -77,6 +77,64 @@ test("enqueue coalesces repeated writes to the same (table,id) into one entry", 
   assert.deepEqual(pending[0].payload, { n: 2 }, "newer payload wins");
 });
 
+test("settleAck atomically preserves a coalesced slot on write-key mismatch", async () => {
+  const s = new MemoryStore();
+  const first = { wall_ms: 100, counter: 0, actor: "dev" };
+  const second = { wall_ms: 100, counter: 1, actor: "dev" };
+  await s.putRow("t", "1", { n: 2 }, {
+    version: second, dirty: true, synced_at_ms: null,
+  });
+  const seq = await s.enqueue({
+    table: "t", id: "1", key: "write-1", base_version: first, payload: { n: 1 },
+  });
+  await s.enqueue({
+    table: "t", id: "1", key: "write-2", base_version: second, payload: { n: 2 },
+  });
+
+  const stale = await s.settleAck({
+    table: "t",
+    id: "1",
+    seq,
+    writeKey: "write-1",
+    baseVersion: first,
+    committedVersion: { wall_ms: 9999, counter: 0, actor: "server" },
+    at: 1000,
+  });
+  assert.deepEqual(stale, { retired: false, adopted: false });
+  assert.equal((await s.pending())[0].key, "write-2");
+  assert.equal((await s.getRow("t", "1")).meta.dirty, true);
+
+  const wrongGeneration = await s.settleAck({
+    table: "t",
+    id: "1",
+    seq,
+    writeKey: "write-2",
+    baseVersion: first,
+    committedVersion: { wall_ms: 9999, counter: 0, actor: "server" },
+    at: 1500,
+  });
+  assert.deepEqual(wrongGeneration, { retired: false, adopted: false });
+  assert.equal((await s.pending())[0].key, "write-2", "base-generation mismatch preserves the slot");
+  assert.equal((await s.getRow("t", "1")).meta.dirty, true);
+
+  const current = await s.settleAck({
+    table: "t",
+    id: "1",
+    seq,
+    writeKey: "write-2",
+    baseVersion: second,
+    committedVersion: { wall_ms: 200, counter: 0, actor: "server" },
+    at: 2000,
+  });
+  assert.deepEqual(current, { retired: true, adopted: true });
+  assert.equal((await s.pending()).length, 0);
+  assert.deepEqual((await s.getRow("t", "1")).meta, {
+    version: { wall_ms: 200, counter: 0, actor: "server" },
+    dirty: false,
+    synced_at_ms: 2000,
+  });
+});
+
 test("enqueue does not grow the queue past maxQueueLength (drop-oldest)", async () => {
   const dropped = [];
   const s = new MemoryStore({ maxQueueLength: 3 });

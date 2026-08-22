@@ -19,6 +19,8 @@ const readJson = (name) => JSON.parse(readFileSync(protoDir + name, "utf8"));
 const CHANGE_EVENT = readJson("change-event.schema.json");
 const WRITE_POLICY = readJson("write-policy.schema.json");
 const CONFORMANCE = readJson("conformance.json");
+const FORMAL_LIFECYCLE_SCHEMA = readJson("formal-write-lifecycle.schema.json");
+const FORMAL_LIFECYCLE = readJson("formal-write-lifecycle.json");
 
 /** The JSON wire form (drops undefined props, exactly what a transport sends). */
 const wire = (v) => JSON.parse(JSON.stringify(v));
@@ -108,4 +110,16 @@ test("the validator itself is sound on the Hlc $ref and type arrays", () => {
   const rowSchema = CHANGE_EVENT.properties.row;
   assert.ok(isValid(rowSchema, {}) && isValid(rowSchema, null));
   assert.equal(isValid(rowSchema, "nope"), false);
+});
+
+test("formal lifecycle traces satisfy their canonical JSON Schema", () => {
+  assert.deepEqual(validate(FORMAL_LIFECYCLE_SCHEMA, FORMAL_LIFECYCLE), []);
+
+  const malformedAction = structuredClone(FORMAL_LIFECYCLE);
+  malformedAction.cases[0].actions[0] = "guess";
+  assert.equal(isValid(FORMAL_LIFECYCLE_SCHEMA, malformedAction), false, "action enum enforced in array items");
+
+  const malformedQueue = structuredClone(FORMAL_LIFECYCLE);
+  delete malformedQueue.cases[1].current.queued.key;
+  assert.equal(isValid(FORMAL_LIFECYCLE_SCHEMA, malformedQueue), false, "nested required key enforced");
 });

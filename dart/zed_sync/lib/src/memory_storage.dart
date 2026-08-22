@@ -5,6 +5,8 @@
 // Drift/Hive/Isar (or atomic-JSON-file) adapter for real persistence.
 
 import 'client.dart';
+import 'core.dart';
+import 'hlc.dart';
 
 String _rowKey(String table, String id) => '$table $id';
 
@@ -33,5 +35,50 @@ class MemoryStorage implements SyncStorage {
   @override
   Future<void> retire(QueuedWrite write) async {
     _queue.removeWhere((w) => w.key == write.key);
+  }
+
+  @override
+  Future<StoredAckSettlement> settleAck(
+      QueuedWrite write, Hlc committedVersion) async {
+    final index = _queue.indexWhere((w) =>
+        w.table == write.table && w.id == write.id && w.key == write.key);
+    final current = _rows[_rowKey(write.table, write.id)];
+    if (index < 0 || current == null) {
+      return const StoredAckSettlement(retired: false, adopted: false);
+    }
+
+    final currentQueued =
+        _queue.lastWhere((w) => w.table == write.table && w.id == write.id);
+    final settlement = settleQueuedAck(
+      local: LocalRow(current.version, dirty: current.dirty),
+      currentId: currentQueued.id,
+      currentKey: currentQueued.key,
+      settlingKey: write.key,
+      baseVersion: write.baseVersion,
+      ackId: write.id,
+      committedVersion: committedVersion,
+    );
+    if (!settlement.retireCurrentSlot) {
+      // Dart keeps independent queue entries instead of coalescing them. A
+      // superseded historical request can be retired by its own key while the
+      // newest slot for the row remains dirty and retryable.
+      if (currentQueued.key != write.key) {
+        _queue.removeAt(index);
+        return const StoredAckSettlement(retired: true, adopted: false);
+      }
+      return const StoredAckSettlement(retired: false, adopted: false);
+    }
+
+    _queue.removeAt(index);
+    final adopted = settlement.adopt;
+    if (adopted != null) {
+      _rows[_rowKey(write.table, write.id)] = StoredRow(
+        row: current.row,
+        version: adopted,
+        dirty: false,
+        syncedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+    return StoredAckSettlement(retired: true, adopted: adopted != null);
   }
 }

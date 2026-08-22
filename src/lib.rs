@@ -174,6 +174,45 @@ pub fn on_ack(local: &LocalRow, ack: &WriteAck) -> AckOutcome {
     }
 }
 
+/// Queue-aware settlement for a response to one specific optimistic write.
+///
+/// A store may coalesce a newer write onto the same physical queue slot while
+/// the older request is in flight. HLC ordering alone is insufficient in that
+/// race: a server-assigned version for the older request may sort after the
+/// newer local version. The current slot may be retired and cleaned only when
+/// its immutable write key and local base version still identify that request.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct QueuedAckSettlement {
+    /// Committed version to adopt; `None` means preserve the current local row.
+    pub adopt: Option<Hlc>,
+    /// Whether both queue identity and local generation still match.
+    pub retire_current_slot: bool,
+}
+
+/// Refine [`on_ack`] with queue identity and local-generation checks. Pure.
+pub fn settle_queued_ack(
+    local: &LocalRow,
+    current: &QueuedWrite,
+    settling_key: &str,
+    base_version: &Hlc,
+    ack: &WriteAck,
+) -> QueuedAckSettlement {
+    let exact_slot = current.id == ack.id && current.key == settling_key;
+    let adopt = if exact_slot && local.version == *base_version {
+        match on_ack(local, ack) {
+            AckOutcome::Adopt(version) => Some(version),
+            AckOutcome::Superseded => None,
+        }
+    } else {
+        None
+    };
+
+    QueuedAckSettlement {
+        retire_current_slot: adopt.is_some(),
+        adopt,
+    }
+}
+
 /// The three timestamps, and who owns each (see `docs/timestamps.md`).
 /// `created_at`/`updated_at` are server-set (inside the row); `synced_at` is a
 /// client-local replica fact. This struct is the client-side metadata record.

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "model": "optimistic-write-lifecycle-v1",
+  "cases": [
+    {
+      "name": "exact current ack adopts and retires the queue slot",
+      "actions": ["local_write", "send", "acknowledge"],
+      "current": {
+        "local": {
+          "version": { "wall_ms": 100, "counter": 0, "actor": "dev" },
+          "dirty": true
+        },
+        "queued": { "table": "products", "id": "p1", "op": "upsert", "key": "write-1" }
+      },
+      "settling": {
+        "write_key": "write-1",
+        "base_version": { "wall_ms": 100, "counter": 0, "actor": "dev" },
+        "ack": {
+          "id": "p1",
+          "committed_version": { "wall_ms": 110, "counter": 0, "actor": "server" }
+        }
+      },
+      "expected": {
+        "settlement": "Adopt",
+        "retire_current_slot": true,
+        "final_dirty": false,
+        "final_queued_key": null,
+        "final_version": { "wall_ms": 110, "counter": 0, "actor": "server" }
+      }
+    },
+    {
+      "name": "late first ack cannot retire a coalesced second write",
+      "actions": ["local_write", "send", "local_write", "acknowledge"],
+      "current": {
+        "local": {
+          "version": { "wall_ms": 200, "counter": 1, "actor": "dev" },
+          "dirty": true
+        },
+        "queued": { "table": "products", "id": "p1", "op": "upsert", "key": "write-2" }
+      },
+      "settling": {
+        "write_key": "write-1",
+        "base_version": { "wall_ms": 200, "counter": 0, "actor": "dev" },
+        "ack": {
+          "id": "p1",
+          "committed_version": { "wall_ms": 200, "counter": 0, "actor": "server" }
+        }
+      },
+      "expected": {
+        "settlement": "Preserve",
+        "retire_current_slot": false,
+        "final_dirty": true,
+        "final_queued_key": "write-2",
+        "final_version": { "wall_ms": 200, "counter": 1, "actor": "dev" }
+      }
+    },
+    {
+      "name": "retry after disconnect settles the unchanged current write",
+      "actions": ["local_write", "send", "disconnect", "reconnect", "send", "acknowledge"],
+      "current": {
+        "local": {
+          "version": { "wall_ms": 300, "counter": 0, "actor": "dev" },
+          "dirty": true
+        },
+        "queued": { "table": "orders", "id": "o1", "op": "delete", "key": "retry-1" }
+      },
+      "settling": {
+        "write_key": "retry-1",
+        "base_version": { "wall_ms": 300, "counter": 0, "actor": "dev" },
+        "ack": {
+          "id": "o1",
+          "committed_version": { "wall_ms": 310, "counter": 0, "actor": "server" }
+        }
+      },
+      "expected": {
+        "settlement": "Adopt",
+        "retire_current_slot": true,
+        "final_dirty": false,
+        "final_queued_key": null,
+        "final_version": { "wall_ms": 310, "counter": 0, "actor": "server" }
+      }
+    },
+    {
+      "name": "a dominating stale ack still cannot clean the newer write",
+      "actions": ["local_write", "send", "local_write", "acknowledge", "duplicate_ack"],
+      "current": {
+        "local": {
+          "version": { "wall_ms": 400, "counter": 1, "actor": "dev" },
+          "dirty": true
+        },
+        "queued": { "table": "carts", "id": "c1", "op": "upsert", "key": "cart-2" }
+      },
+      "settling": {
+        "write_key": "cart-1",
+        "base_version": { "wall_ms": 400, "counter": 0, "actor": "dev" },
+        "ack": {
+          "id": "c1",
+          "committed_version": { "wall_ms": 9999, "counter": 0, "actor": "server" }
+        }
+      },
+      "expected": {
+        "settlement": "Preserve",
+        "retire_current_slot": false,
+        "final_dirty": true,
+        "final_queued_key": "cart-2",
+        "final_version": { "wall_ms": 400, "counter": 1, "actor": "dev" }
+      }
+    }
+  ]
+}

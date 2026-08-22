@@ -41,6 +41,30 @@ export function onAck(local, ack) {
 }
 
 /**
+ * Queue-aware ack settlement. A coalesced slot belongs to the response only
+ * when its immutable key and local base version still match. This prevents a
+ * late ack with a server-dominating HLC from overwriting a newer generation.
+ * @param {LocalRow} local
+ * @param {{ id: string, key: string }} currentQueued
+ * @param {string} settlingKey
+ * @param {Hlc} baseVersion
+ * @param {{ id: string, committed_version: Hlc }} ack
+ * @returns {{ adopt: Hlc|null, retire_current_slot: boolean }}
+ */
+export function settleQueuedAck(local, currentQueued, settlingKey, baseVersion, ack) {
+  const exactSlot = currentQueued.id === ack.id && currentQueued.key === settlingKey;
+  if (!exactSlot || compareHlc(local.version, baseVersion) !== 0) {
+    return { adopt: null, retire_current_slot: false };
+  }
+  const outcome = onAck(local, ack);
+  const adopt = outcome === "Superseded" ? null : outcome.Adopt;
+  return {
+    adopt,
+    retire_current_slot: adopt !== null,
+  };
+}
+
+/**
  * True when `incoming` is the realtime echo of THIS queued write. Matched by
  * exact write_key (+ table/id/op); a missing/different key is never ours.
  * @param {{ table: string, id: string, op: string, key: string }} queued

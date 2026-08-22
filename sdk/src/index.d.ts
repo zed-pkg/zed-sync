@@ -69,6 +69,13 @@ export class Clock {
 
 export function reconcile(local: LocalRow | null | undefined, incoming: ChangeEvent): Reconcile;
 export function onAck(local: LocalRow, ack: { id: string; committed_version: Hlc }): AckOutcome;
+export function settleQueuedAck(
+  local: LocalRow,
+  currentQueued: { id: string; key: string },
+  settlingKey: string,
+  baseVersion: Hlc,
+  ack: { id: string; committed_version: Hlc },
+): { adopt: Hlc | null; retire_current_slot: boolean };
 export function isOwnEcho(queued: { table: string; id: string; op: string; key: string }, incoming: ChangeEvent): boolean;
 export function resolveConflict(resolution: ConflictResolutionValue, local: LocalRow, incoming: ChangeEvent): boolean;
 export function loadWasmCore(): Promise<{
@@ -87,6 +94,21 @@ export function makeConsoleTelemetry(prefix?: string): Telemetry;
 export function combineTelemetry(...sinks: Array<Telemetry | null | undefined>): Telemetry;
 export function makeOtelTelemetry(deps?: { tracer?: unknown; meter?: unknown; logger?: unknown }): Telemetry;
 
+export interface AckSettlementOptions {
+  table: string;
+  id: string;
+  seq: number;
+  writeKey: string;
+  baseVersion: Hlc;
+  committedVersion: Hlc;
+  at?: number;
+}
+
+export interface StoreAckSettlement {
+  retired: boolean;
+  adopted: boolean;
+}
+
 export interface Store {
   getRow(table: string, id: string): Promise<{ row: unknown; meta: RowMeta } | null>;
   putRow(table: string, id: string, row: unknown, meta: RowMeta): Promise<void>;
@@ -94,6 +116,7 @@ export interface Store {
   enqueue(write: object): Promise<number>;
   pending(): Promise<Array<Record<string, unknown> & { seq: number }>>;
   retire(seq: number): Promise<void>;
+  settleAck(options: AckSettlementOptions): Promise<StoreAckSettlement>;
   getCursor(scope: string): Promise<{ cursor: string; lastSyncedAtMs: number } | null>;
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
@@ -109,6 +132,7 @@ export class MemoryStore implements Store {
   enqueue(write: object): Promise<number>;
   pending(): Promise<Array<Record<string, unknown> & { seq: number }>>;
   retire(seq: number): Promise<void>;
+  settleAck(options: AckSettlementOptions): Promise<StoreAckSettlement>;
   getCursor(scope: string): Promise<{ cursor: string; lastSyncedAtMs: number } | null>;
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }
@@ -122,6 +146,7 @@ export class IndexedDbStore implements Store {
   enqueue(write: object): Promise<number>;
   pending(): Promise<Array<Record<string, unknown> & { seq: number }>>;
   retire(seq: number): Promise<void>;
+  settleAck(options: AckSettlementOptions): Promise<StoreAckSettlement>;
   getCursor(scope: string): Promise<{ cursor: string; lastSyncedAtMs: number } | null>;
   setCursor(scope: string, cursor: string, at?: number): Promise<void>;
 }

@@ -61,7 +61,38 @@ async function browserScenario(dbName) {
     out.coalesced = o1.length === 1 && o1[0].payload.n === 2;
   }
 
-  // 4) DURABILITY ACROSS RELOAD: a brand-new connection to the SAME db still
+  // 4) The IDB transaction binds ack retirement to the immutable key, not the
+  //    reused sequence number. Even a server-dominating stale HLC cannot clean
+  //    or remove the newer coalesced write.
+  {
+    const store = await IndexedDbStore.open(dbName);
+    const first = { wall_ms: 100, counter: 0, actor: "browser" };
+    const second = { wall_ms: 100, counter: 1, actor: "browser" };
+    await store.putRow("formal", "race", { n: 2 }, {
+      version: second, dirty: true, synced_at_ms: null,
+    });
+    const seq = await store.enqueue({
+      table: "formal", id: "race", key: "write-1", base_version: first, payload: { n: 1 },
+    });
+    await store.enqueue({
+      table: "formal", id: "race", key: "write-2", base_version: second, payload: { n: 2 },
+    });
+    const stale = await store.settleAck({
+      table: "formal",
+      id: "race",
+      seq,
+      writeKey: "write-1",
+      baseVersion: first,
+      committedVersion: { wall_ms: 9999, counter: 0, actor: "server" },
+      at: 1000,
+    });
+    const queued = (await store.pending()).find((w) => w.table === "formal" && w.id === "race");
+    const row = await store.getRow("formal", "race");
+    out.staleAckPreserved =
+      !stale.retired && !stale.adopted && queued?.key === "write-2" && row.meta.dirty === true;
+  }
+
+  // 5) DURABILITY ACROSS RELOAD: a brand-new connection to the SAME db still
   //    sees the committed row and the queued offline writes (survives a reload).
   {
     const store = await IndexedDbStore.open(dbName);
@@ -71,7 +102,7 @@ async function browserScenario(dbName) {
     out.reloadQueueSurvives = ids.includes("p2") && ids.includes("o1");
   }
 
-  // 5) reconcile over real IDB: a newer server version adopts onto the clean row.
+  // 6) reconcile over real IDB: a newer server version adopts onto the clean row.
   {
     const store = await IndexedDbStore.open(dbName);
     const client = new SyncClient({ store, actor: "browser-1", send: committing });
@@ -103,6 +134,7 @@ test("IndexedDbStore + SyncClient in real headless Chromium", { skip: chromium ?
     assert.equal(out.queueDrained, true, "queue drained after ack");
     assert.equal(out.p2Pending, true, "LOCAL_ONLY write left durably queued");
     assert.equal(out.coalesced, true, "IDB enqueue coalesced repeated writes, newest payload wins");
+    assert.equal(out.staleAckPreserved, true, "IDB settlement preserved the newer coalesced write");
     assert.equal(out.reloadRowSurvives, true, "committed row survives a reload (new IDB connection)");
     assert.equal(out.reloadQueueSurvives, true, "queued offline writes survive a reload");
     assert.equal(out.applyOutcome, "applied", "newer server version applies over IDB");

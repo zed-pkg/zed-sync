@@ -3,6 +3,8 @@
 // path — the Dart mirror of sdk/test/client.test.mjs (kept separate from the
 // shared-fixture conformance suite in conformance_test.dart).
 
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zed_sync/zed_sync.dart';
 
@@ -120,5 +122,46 @@ void main() {
     final after = await store.getRow('products', 'p1');
     expect(after!.row!['server'], isNull, reason: 'dirty payload preserved');
     expect(after.dirty, isTrue);
+  });
+
+  test('a late first ack cannot clean a newer queued write', () async {
+    final store = MemoryStorage();
+    final firstStarted = Completer<void>();
+    final firstAck = Completer<Hlc>();
+    var sends = 0;
+    ChangeEvent? firstChange;
+    final client = SyncClient(
+      storage: store,
+      actor: 'dev-race',
+      send: (change) {
+        sends++;
+        if (sends == 1) {
+          firstChange = change;
+          firstStarted.complete();
+          return firstAck.future;
+        }
+        throw StateError('offline');
+      },
+    );
+
+    final first = client.write('products', 'p1', {'id': 'p1', 'revision': 1});
+    await firstStarted.future;
+    final second =
+        await client.write('products', 'p1', {'id': 'p1', 'revision': 2});
+    expect(second.status, WriteStatus.queued);
+    expect((await store.pending()).length, 2,
+        reason: 'Dart retains independent immutable-key queue entries');
+
+    firstAck.complete(Hlc(firstChange!.version.wallMs + 100000, 0, 'server'));
+    await first;
+
+    final pending = await store.pending();
+    expect(pending.length, 1, reason: 'only the first immutable key retired');
+    expect(pending.single.payload!['revision'], 2,
+        reason: 'newer write remains retryable');
+    final row = await store.getRow('products', 'p1');
+    expect(row!.row!['revision'], 2);
+    expect(row.dirty, isTrue,
+        reason: 'dominating stale server HLC cannot clean a newer generation');
   });
 }

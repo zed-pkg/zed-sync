@@ -20,9 +20,9 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly is_own_echo: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly on_ack: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly reconcile: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly on_ack: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly is_own_echo: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
