@@ -22,7 +22,9 @@ zed-sync
 ├── protocol/                     language-neutral JSON Schema + conformance cases
 │   ├── change-event.schema.json  the wire envelope
 │   ├── write-policy.schema.json  WriteMode / ErrorPolicy / ConflictResolution enums
-│   └── conformance.json          golden cases — Rust, JS, AND Dart all run these
+│   ├── conformance.json          golden cases — Rust, JS, AND Dart all run these
+│   └── formal-write-lifecycle.*  schema + concrete three-runtime refinement traces
+├── formal/                       Quint state machine + schema-v1 fmctl manifest
 ├── src/ (zed-sync-core, Rust)    pure reconcile / on_ack / echo + HLC (src/hlc.rs)
 │   └── wasm.rs                    wasm-bindgen JSON ABI (--features wasm)
 ├── postgres/zed_sync.sql         server: HLC trigger, monotonic timestamps, outbox, sync_sequence
@@ -64,6 +66,13 @@ zed-sync
    `zed-clients` consumes them — so an app's generated I/O and ORM types line up
    with what zed-sync moves over the wire.
 
+4. **Executable formal safety for critical state.** The finite Quint model in
+   `formal/` exhaustively checks exact-key queue retirement, late/duplicate ack
+   safety, disconnect retry, and explicit server-wins conflict transitions.
+   Concrete HLC/write-key traces are constrained by JSON Schema and replayed by
+   Rust, JavaScript/TypeScript, and Dart. See [formal/README.md](formal/README.md)
+   for the proof boundary and witness claims.
+
 ## Quickstart (browser)
 
 ```js
@@ -91,6 +100,7 @@ cargo test                                   # Rust core + shared conformance
 npm --prefix sdk install && npm --prefix sdk test    # JS SDK + shared conformance
 npm --prefix sdk run typecheck               # validate the shipped .d.ts
 cd dart/zed_sync && dart test                # Dart core + shared conformance
+fmctl validate && fmctl check && fmctl simulate && fmctl verify
 ```
 
 The pinned contributor environment runs every runtime, formatter, WASM rebuild,

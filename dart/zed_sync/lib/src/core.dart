@@ -95,6 +95,34 @@ Reconcile reconcile(LocalRow? local, ChangeEvent incoming) {
 Hlc? onAck(LocalRow local, Hlc committedVersion) =>
     local.version.compareTo(committedVersion) > 0 ? null : committedVersion;
 
+/// Queue-aware ack settlement shared with the Rust and JavaScript cores.
+///
+/// [retireCurrentSlot] is true only when the immutable key and local base
+/// version still identify the settling request. [adopt] carries the committed
+/// version for that same safe transition.
+class QueuedAckSettlement {
+  final Hlc? adopt;
+  final bool retireCurrentSlot;
+  const QueuedAckSettlement(this.adopt, this.retireCurrentSlot);
+}
+
+QueuedAckSettlement settleQueuedAck({
+  required LocalRow local,
+  required String currentId,
+  required String currentKey,
+  required String settlingKey,
+  required Hlc baseVersion,
+  required String ackId,
+  required Hlc committedVersion,
+}) {
+  final exactSlot = currentId == ackId && currentKey == settlingKey;
+  if (!exactSlot || local.version.compareTo(baseVersion) != 0) {
+    return const QueuedAckSettlement(null, false);
+  }
+  final adopted = onAck(local, committedVersion);
+  return QueuedAckSettlement(adopted, adopted != null);
+}
+
 /// True when [incoming] is the realtime echo of this queued write.
 bool isOwnEcho(
         {required String table,

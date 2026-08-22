@@ -36,6 +36,12 @@ class QueuedWrite {
       this.table, this.id, this.op, this.payload, this.baseVersion, this.key);
 }
 
+class StoredAckSettlement {
+  final bool retired;
+  final bool adopted;
+  const StoredAckSettlement({required this.retired, required this.adopted});
+}
+
 /// Persistence boundary. Implement over Drift/Hive/Isar or a JSON file.
 abstract class SyncStorage {
   Future<StoredRow?> getRow(String table, String id);
@@ -43,6 +49,12 @@ abstract class SyncStorage {
   Future<void> enqueue(QueuedWrite write);
   Future<List<QueuedWrite>> pending();
   Future<void> retire(QueuedWrite write);
+
+  /// Atomically retire [write] only if it still identifies the stored queue
+  /// entry, and adopt [committedVersion] only if the row is still at the
+  /// write's base version.
+  Future<StoredAckSettlement> settleAck(
+      QueuedWrite write, Hlc committedVersion);
 }
 
 /// The outcome of a write, mirroring the JS WriteResult.status.
@@ -212,19 +224,7 @@ class SyncClient {
           atMs: version.wallMs,
           row: row,
           writeKey: key));
-      final current = await storage.getRow(table, id);
-      if (current != null &&
-          onAck(LocalRow(current.version), committed) != null) {
-        await storage.putRow(
-            table,
-            id,
-            StoredRow(
-                row: current.row,
-                version: committed,
-                dirty: false,
-                syncedAtMs: DateTime.now().millisecondsSinceEpoch));
-      }
-      await storage.retire(queued);
+      await storage.settleAck(queued, committed);
       _emit('sync.write.acked', {'table': table, 'id': id});
       return WriteResult(WriteStatus.acked, committed);
     } catch (err) {
@@ -271,19 +271,7 @@ class SyncClient {
             atMs: w.baseVersion.wallMs,
             row: w.payload,
             writeKey: w.key));
-        final current = await storage.getRow(w.table, w.id);
-        if (current != null &&
-            onAck(LocalRow(current.version), committed) != null) {
-          await storage.putRow(
-              w.table,
-              w.id,
-              StoredRow(
-                  row: current.row,
-                  version: committed,
-                  dirty: false,
-                  syncedAtMs: DateTime.now().millisecondsSinceEpoch));
-        }
-        await storage.retire(w);
+        await storage.settleAck(w, committed);
         sent++;
       } catch (_) {
         break; // retried next reconnect

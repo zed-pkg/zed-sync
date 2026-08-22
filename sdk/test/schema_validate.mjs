@@ -1,7 +1,8 @@
 // A tiny, dependency-free validator for the exact JSON Schema 2020-12 subset the
 // protocol/*.schema.json files use: type (incl. arrays + "integer"), enum,
-// required, properties, additionalProperties:false, pattern, min/max, and
-// {min,max}Length, with local "#/$defs/..." $ref resolution. Kept deliberately
+// required, properties, additionalProperties:false, pattern, min/max,
+// {min,max}Length, and array items/{min,max}Items, with local "#/$defs/..."
+// $ref resolution. Kept deliberately
 // small — the SDK ships no runtime deps — and self-checked by the suite that
 // uses it (valid payloads pass, malformed ones are rejected). This is how one
 // shared schema validates the I/O wire for every language port (goal #3).
@@ -38,6 +39,20 @@ export function validate(schema, value, root = schema, path = "$") {
   if (typeof value === "number") {
     if (schema.minimum != null && value < schema.minimum) errors.push(`${path}: below minimum ${schema.minimum}`);
     if (schema.maximum != null && value > schema.maximum) errors.push(`${path}: above maximum ${schema.maximum}`);
+  }
+
+  if (Array.isArray(value)) {
+    if (schema.minItems != null && value.length < schema.minItems) {
+      errors.push(`${path}: shorter than minItems ${schema.minItems}`);
+    }
+    if (schema.maxItems != null && value.length > schema.maxItems) {
+      errors.push(`${path}: longer than maxItems ${schema.maxItems}`);
+    }
+    if (schema.items) {
+      for (const [index, item] of value.entries()) {
+        errors.push(...validate(schema.items, item, root, `${path}[${index}]`));
+      }
+    }
   }
 
   if (isPlainObject(value) && (schema.properties || schema.required || schema.additionalProperties === false)) {

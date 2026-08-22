@@ -369,6 +369,55 @@ test("a dirty write preserves the prior synced_at_ms (editing synced state does 
   assert.equal(after.meta.synced_at_ms, synced);
 });
 
+test("a late first ack cannot retire or clean a coalesced second write", async () => {
+  const store = new MemoryStore();
+  let releaseFirst;
+  let markFirstStarted;
+  const firstStarted = new Promise((resolve) => {
+    markFirstStarted = resolve;
+  });
+  let sendCount = 0;
+  const client = new SyncClient({
+    store,
+    actor: "dev-race",
+    send: async (change) => {
+      sendCount += 1;
+      if (sendCount === 1) {
+        markFirstStarted();
+        return new Promise((resolve) => {
+          releaseFirst = () => resolve({
+            // Deliberately dominates the second local HLC. Queue identity must
+            // still win over timestamp ordering for lifecycle settlement.
+            committed_version: {
+              wall_ms: change.version.wall_ms + 100_000,
+              counter: 0,
+              actor: "server",
+            },
+          });
+        });
+      }
+      throw new Error("offline");
+    },
+  });
+
+  const first = client.write("products", "p1", { id: "p1", revision: 1 });
+  await firstStarted;
+  const second = await client.write("products", "p1", { id: "p1", revision: 2 });
+  assert.equal(second.status, "queued");
+  const [beforeAck] = await store.pending();
+  assert.equal(beforeAck.payload.revision, 2, "second write replaced the coalesced slot");
+
+  releaseFirst();
+  await first;
+
+  const [afterAck] = await store.pending();
+  assert.equal(afterAck.key, beforeAck.key, "newer immutable key remains queued");
+  assert.equal(afterAck.payload.revision, 2, "newer payload remains queued");
+  const row = await store.getRow("products", "p1");
+  assert.equal(row.row.revision, 2, "newer local row survives the stale response");
+  assert.equal(row.meta.dirty, true, "newer local row remains retryable");
+});
+
 test("constructor validates its dependencies and enums up front", () => {
   assert.throws(() => new SyncClient({ actor: "dev" }), TypeError);
   assert.throws(() => new SyncClient({ store: new MemoryStore() }), TypeError);

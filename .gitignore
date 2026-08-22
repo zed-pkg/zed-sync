@@ -1,4 +1,6 @@
 /target
+/.formal-artifacts
+/_apalache-out
 Cargo.lock
 .cache/
 __pycache__/

@@ -7,7 +7,14 @@ export {
   assertConflictResolution,
 } from "./policy.mjs";
 export { Clock, compareHlc, encodeHlc, MAX_DRIFT_MS } from "./hlc.mjs";
-export { reconcile, onAck, isOwnEcho, resolveConflict, loadWasmCore } from "./core.mjs";
+export {
+  reconcile,
+  onAck,
+  settleQueuedAck,
+  isOwnEcho,
+  resolveConflict,
+  loadWasmCore,
+} from "./core.mjs";
 export { deepMerge } from "./merge.mjs";
 export {
   noopTelemetry,

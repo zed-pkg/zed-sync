@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zed-pkg.github.io/zed-sync/formal-write-lifecycle.schema.json",
+  "title": "zed-sync formal write lifecycle refinement traces",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "model", "cases"],
+  "properties": {
+    "schema_version": { "type": "integer", "enum": [1] },
+    "model": { "type": "string", "enum": ["optimistic-write-lifecycle-v1"] },
+    "cases": {
+      "type": "array",
+      "minItems": 4,
+      "items": { "$ref": "#/$defs/SettlementCase" }
+    }
+  },
+  "$defs": {
+    "Hlc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wall_ms", "counter", "actor"],
+      "properties": {
+        "wall_ms": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "counter": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "actor": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "LocalRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "dirty"],
+      "properties": {
+        "version": { "$ref": "#/$defs/Hlc" },
+        "dirty": { "type": "boolean" }
+      }
+    },
+    "QueuedWrite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table", "id", "op", "key"],
+      "properties": {
+        "table": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,62}$" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "op": { "type": "string", "enum": ["upsert", "delete"] },
+        "key": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "WriteAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "committed_version"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "committed_version": { "$ref": "#/$defs/Hlc" }
+      }
+    },
+    "SettlementCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "actions", "current", "settling", "expected"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "actions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "enum": [
+              "local_write",
+              "send",
+              "disconnect",
+              "reconnect",
+              "send_failure",
+              "acknowledge",
+              "duplicate_ack"
+            ]
+          }
+        },
+        "current": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["local", "queued"],
+          "properties": {
+            "local": { "$ref": "#/$defs/LocalRow" },
+            "queued": { "$ref": "#/$defs/QueuedWrite" }
+          }
+        },
+        "settling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["write_key", "base_version", "ack"],
+          "properties": {
+            "write_key": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "base_version": { "$ref": "#/$defs/Hlc" },
+            "ack": { "$ref": "#/$defs/WriteAck" }
+          }
+        },
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "settlement",
+            "retire_current_slot",
+            "final_dirty",
+            "final_queued_key",
+            "final_version"
+          ],
+          "properties": {
+            "settlement": { "type": "string", "enum": ["Adopt", "Preserve"] },
+            "retire_current_slot": { "type": "boolean" },
+            "final_dirty": { "type": "boolean" },
+            "final_queued_key": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+            "final_version": { "$ref": "#/$defs/Hlc" }
+          }
+        }
+      }
+    }
+  }
+}
