@@ -25,9 +25,9 @@ jobs:
       # Keep these argv identical to `fmctl --dry-run`; the repository-local
       # schema-v1 manifest is the source of the claim and resource bounds.
       - name: Typecheck Quint specification
-        run: >-
-          npx --yes --package=@informalsystems/quint@0.32.0 quint typecheck
-          formal/write_lifecycle.qnt
+        run: |
+          npx --yes --package=@informalsystems/quint@0.32.0 quint typecheck formal/write_lifecycle.qnt
+          npx --yes --package=@informalsystems/quint@0.32.0 quint typecheck formal/app_lifecycle.qnt
       - name: Simulate invariants and reachability witnesses
         run: >-
           npx --yes --package=@informalsystems/quint@0.32.0 quint run
@@ -49,3 +49,24 @@ jobs:
           --step=step
           --backend=tlc
           --invariants write_lifecycle_safety
+      - name: Simulate application lifecycle invariants and reachability
+        run: >-
+          npx --yes --package=@informalsystems/quint@0.32.0 quint run
+          formal/app_lifecycle.qnt
+          --main=app_lifecycle
+          --init=init
+          --step=step
+          --backend=typescript
+          --max-samples=10000
+          --max-steps=24
+          --invariants app_lifecycle_safety
+          --witnesses online_reached offline_reached failed_reached stale_completion_reached rejected_transition_reached failure_reconciliation_reached
+      - name: Exhaustively verify the finite application lifecycle with TLC
+        run: >-
+          npx --yes --package=@informalsystems/quint@0.32.0 quint verify
+          formal/app_lifecycle.qnt
+          --main=app_lifecycle
+          --init=init
+          --step=step
+          --backend=tlc
+          --invariants app_lifecycle_safety

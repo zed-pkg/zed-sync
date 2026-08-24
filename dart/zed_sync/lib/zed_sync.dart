@@ -8,7 +8,9 @@
 library zed_sync;
 
 export 'src/hlc.dart';
+export 'src/lifecycle.dart';
 export 'src/policy.dart';
 export 'src/core.dart';
 export 'src/client.dart';
 export 'src/memory_storage.dart';
+export 'src/session.dart';

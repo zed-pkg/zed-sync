@@ -7,6 +7,7 @@
 import { reconcile, isOwnEcho, resolveConflict } from "./core.mjs";
 import { deepMerge } from "./merge.mjs";
 import { Clock } from "./hlc.mjs";
+import { LifecycleOperationError } from "./lifecycle.mjs";
 import {
   WriteMode,
   ErrorPolicy,
@@ -36,6 +37,8 @@ export class SyncClient {
    * @param {string} [deps.conflictResolution] default ConflictResolution (enum)
    * @param {string[]} [deps.tables]           incoming-change table allowlist; omit to allow all
    * @param {(err: unknown, ctx: object) => void} [deps.onError]
+   * @param {{snapshot: object, capabilities: object}} [deps.lifecycle]
+   *   optional lifecycle authority; startSync supplies it automatically
    */
   constructor({
     store,
@@ -47,6 +50,7 @@ export class SyncClient {
     conflictResolution = ConflictResolution.SERVER_WINS,
     tables,
     onError,
+    lifecycle,
   }) {
     if (!store) throw new TypeError("SyncClient requires a store");
     if (typeof store.settleAck !== "function") {
@@ -63,6 +67,7 @@ export class SyncClient {
     /** @type {Set<string>|null} allowlist of tables incoming changes may touch */
     this.tables = tables ? new Set(tables) : null;
     this.onError = onError;
+    this.lifecycle = lifecycle;
     this.clock = new Clock(actor);
     // Route bounded-queue overflow drops through the configured error policy.
     if (store && "onOverflow" in store) {
@@ -72,6 +77,15 @@ export class SyncClient {
           { table: dropped.table, id: dropped.id, op: dropped.op, reason: "queue-overflow" },
           this.errorPolicy,
         );
+    }
+  }
+
+  #requireCapability(capability, operation) {
+    if (!this.lifecycle) return;
+    if (!this.lifecycle.capabilities?.[capability]) {
+      const phase = this.lifecycle.snapshot?.phase ?? "unknown";
+      this.telemetry.event("sync.lifecycle.rejected", { operation, phase });
+      throw new LifecycleOperationError(operation, phase);
     }
   }
 
@@ -90,6 +104,7 @@ export class SyncClient {
    * @returns {Promise<"applied"|"ignored"|"conflict-resolved"|"refreshed">}
    */
   async applyChange(incoming) {
+    this.#requireCapability("canReceiveChanges", "receive changes");
     // Table allowlist: drop a change for a table this client was not configured to
     // sync. Rejected BEFORE folding the stamp into the clock so a non-allowlisted
     // (and potentially hostile) stamp cannot advance/poison the local clock.
@@ -157,6 +172,7 @@ export class SyncClient {
    * @returns {Promise<{ status: string, version: object }>}
    */
   async write(table, id, row, options = {}) {
+    this.#requireCapability("canWrite", "write");
     const opts = typeof options === "string" ? { op: options } : options;
     const op = opts.op ?? (row === null ? "delete" : "upsert");
     const mode = assertWriteMode(opts.mode ?? this.writeMode);
@@ -243,6 +259,7 @@ export class SyncClient {
    * @param {string} [errorPolicy]
    */
   async flushQueue(errorPolicy = ErrorPolicy.THROW_ONLY) {
+    this.#requireCapability("canWrite", "flush");
     const policy = assertErrorPolicy(errorPolicy);
     this.telemetry.event("sync.flush.start", {});
     let sent = 0;

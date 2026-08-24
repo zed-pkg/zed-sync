@@ -13,6 +13,32 @@ the write policies mirror the Rust core and the JS SDK, and run the shared
 - `lib/src/core.dart` — pure `reconcile` / `onAck` / `isOwnEcho` + envelopes.
 - `lib/src/client.dart` — `SyncClient` with optimistic writes, the same
   WriteMode behavior, and a `SyncStorage` boundary.
+- `lib/src/lifecycle.dart` — the total, deterministic application lifecycle
+  reducer shared with Rust and JavaScript.
+- `lib/src/session.dart` — `SyncSession`, the mobile lifecycle owner that gates
+  even a retained `SyncClient` outside an active session.
+
+## Managed mobile lifecycle
+
+```dart
+final session = SyncSession(
+  client: SyncClient(storage: storage, actor: deviceId, send: send),
+  activate: () async {
+    await transports.start();
+    return transports.online;
+  },
+  // Must be idempotent so a late startup completion can be cleaned again.
+  deactivate: transports.stop,
+);
+
+await session.start();
+await session.client.write('products', 'p1', {'id': 'p1'});
+await session.stop();
+```
+
+Capabilities come only from `session.capabilities`. A startup/runtime/stop
+failure blocks writes and requires `session.stop()` to reconcile platform
+effects to `stopped` before another start.
 
 ## Storage adapters
 

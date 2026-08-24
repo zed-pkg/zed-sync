@@ -5,6 +5,7 @@
 
 import 'core.dart';
 import 'hlc.dart';
+import 'lifecycle.dart';
 import 'policy.dart';
 
 /// Locally stored row + its sync metadata.
@@ -77,6 +78,7 @@ class SyncClient {
   final ConflictResolution conflictResolution;
   final void Function(String event, Map<String, dynamic> attrs)? telemetry;
   final Clock _clock;
+  AppLifecycleMachine? _lifecycle;
   int _keySeq = 0;
 
   SyncClient({
@@ -87,7 +89,26 @@ class SyncClient {
     this.errorPolicy = ErrorPolicy.emitOnly,
     this.conflictResolution = ConflictResolution.serverWins,
     this.telemetry,
-  }) : _clock = Clock(actor);
+    AppLifecycleMachine? lifecycle,
+  })  : _clock = Clock(actor),
+        _lifecycle = lifecycle;
+
+  void attachLifecycle(AppLifecycleMachine lifecycle) {
+    if (_lifecycle != null && !identical(_lifecycle, lifecycle)) {
+      throw StateError('SyncClient already has a lifecycle authority');
+    }
+    _lifecycle = lifecycle;
+  }
+
+  void _requireCapability(
+      bool Function(AppCapabilities value) read, String operation) {
+    final lifecycle = _lifecycle;
+    if (lifecycle == null || read(lifecycle.capabilities)) return;
+    _emit('sync.lifecycle.rejected',
+        {'operation': operation, 'phase': lifecycle.snapshot.phase.name});
+    throw StateError(
+        'zed-sync lifecycle: cannot $operation while ${lifecycle.snapshot.phase.name}');
+  }
 
   String _nextKey() =>
       '$actor-${DateTime.now().millisecondsSinceEpoch}-${_keySeq++}';
@@ -98,6 +119,7 @@ class SyncClient {
   /// Apply an incoming change (from either transport) through reconcile.
   /// Returns "applied" | "ignored" | "conflict-resolved" | "refreshed".
   Future<String> applyChange(ChangeEvent incoming) async {
+    _requireCapability((value) => value.canReceiveChanges, 'receive changes');
     _clock.observe(incoming.version);
     final existing = await storage.getRow(incoming.table, incoming.id);
     final local = existing == null
@@ -164,6 +186,7 @@ class SyncClient {
     WriteMode? mode,
     ErrorPolicy? policy,
   }) async {
+    _requireCapability((value) => value.canWrite, 'write');
     final m = mode ?? writeMode;
     final p = policy ?? errorPolicy;
     final version = _clock.tick();
@@ -259,6 +282,7 @@ class SyncClient {
 
   /// Re-send everything still queued (on reconnect) under the original keys.
   Future<int> flushQueue() async {
+    _requireCapability((value) => value.canWrite, 'flush');
     _emit('sync.flush.start');
     var sent = 0;
     for (final w in await storage.pending()) {

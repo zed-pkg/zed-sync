@@ -52,6 +52,109 @@ export const ConflictResolution: {
 };
 export type ConflictResolutionValue = (typeof ConflictResolution)[keyof typeof ConflictResolution];
 
+export const AppPhase: {
+  readonly STOPPED: "stopped";
+  readonly STARTING: "starting";
+  readonly ONLINE: "online";
+  readonly OFFLINE: "offline";
+  readonly STOPPING: "stopping";
+  readonly FAILED: "failed";
+};
+export type AppPhaseValue = (typeof AppPhase)[keyof typeof AppPhase];
+export const LifecycleOperation: {
+  readonly NONE: "none";
+  readonly START: "start";
+  readonly STOP: "stop";
+  readonly RECONCILE: "reconcile";
+};
+export type LifecycleOperationValue =
+  (typeof LifecycleOperation)[keyof typeof LifecycleOperation];
+export const LifecycleFailure: {
+  readonly START: "start";
+  readonly RUNTIME: "runtime";
+  readonly STOP: "stop";
+};
+export type LifecycleFailureValue =
+  (typeof LifecycleFailure)[keyof typeof LifecycleFailure];
+export const TransitionOutcome: {
+  readonly APPLIED: "applied";
+  readonly STUTTERED: "stuttered";
+  readonly STALE: "stale";
+  readonly REJECTED: "rejected";
+};
+export type TransitionOutcomeValue =
+  (typeof TransitionOutcome)[keyof typeof TransitionOutcome];
+
+export type AppLifecycleEvent =
+  | { readonly type: "start_requested" }
+  | { readonly type: "start_succeeded"; readonly token: number }
+  | { readonly type: "start_failed"; readonly token: number }
+  | { readonly type: "connectivity_changed"; readonly token: number; readonly online: boolean }
+  | { readonly type: "runtime_failed"; readonly token: number }
+  | { readonly type: "stop_requested" }
+  | { readonly type: "stop_succeeded"; readonly token: number }
+  | { readonly type: "stop_failed"; readonly token: number }
+  | { readonly type: "reconcile_requested" };
+
+export const LifecycleEvent: {
+  startRequested(): AppLifecycleEvent;
+  startSucceeded(token: number): AppLifecycleEvent;
+  startFailed(token: number): AppLifecycleEvent;
+  connectivityChanged(token: number, online: boolean): AppLifecycleEvent;
+  runtimeFailed(token: number): AppLifecycleEvent;
+  stopRequested(): AppLifecycleEvent;
+  stopSucceeded(token: number): AppLifecycleEvent;
+  stopFailed(token: number): AppLifecycleEvent;
+  reconcileRequested(): AppLifecycleEvent;
+};
+
+export interface AppLifecycleSnapshot {
+  readonly phase: AppPhaseValue;
+  readonly operation: LifecycleOperationValue;
+  readonly generation: number;
+  readonly activeToken: number | null;
+  readonly desiredRunning: boolean;
+  readonly online: boolean;
+  readonly failure: LifecycleFailureValue | null;
+}
+
+export interface AppCapabilities {
+  readonly canStart: boolean;
+  readonly canStop: boolean;
+  readonly canWrite: boolean;
+  readonly canReceiveChanges: boolean;
+  readonly canFlush: boolean;
+  readonly canReconcile: boolean;
+  readonly busy: boolean;
+  readonly running: boolean;
+}
+
+export interface AppLifecycleView {
+  readonly snapshot: AppLifecycleSnapshot;
+  readonly capabilities: AppCapabilities;
+  subscribe(
+    listener: (snapshot: AppLifecycleSnapshot, event: AppLifecycleEvent) => void,
+  ): () => void;
+}
+
+export class AppLifecycleMachine implements AppLifecycleView {
+  readonly snapshot: AppLifecycleSnapshot;
+  readonly capabilities: AppCapabilities;
+  dispatch(event: AppLifecycleEvent): TransitionOutcomeValue;
+  subscribe(
+    listener: (snapshot: AppLifecycleSnapshot, event: AppLifecycleEvent) => void,
+  ): () => void;
+}
+export class LifecycleOperationError extends Error {
+  constructor(operation: string, phase: string);
+  operation: string;
+  phase: string;
+}
+export function appCapabilities(snapshot: AppLifecycleSnapshot): AppCapabilities;
+export function assertAppLifecycleInvariant(
+  snapshot: AppLifecycleSnapshot,
+): AppLifecycleSnapshot;
+
 export function assertWriteMode(mode: string): WriteModeValue;
 export function assertErrorPolicy(policy: string): ErrorPolicyValue;
 export function assertConflictResolution(resolution: string): ConflictResolutionValue;
@@ -173,6 +276,7 @@ export class SyncClient {
     conflictResolution?: ConflictResolutionValue;
     tables?: string[];
     onError?: (err: unknown, ctx: Record<string, unknown>) => void;
+    lifecycle?: AppLifecycleView;
   });
   actor: string;
   applyChange(incoming: ChangeEvent): Promise<"applied" | "ignored" | "conflict-resolved" | "refreshed">;
@@ -274,8 +378,18 @@ export function startSync(opts: {
   writeMode?: WriteModeValue;
   errorPolicy?: ErrorPolicyValue;
   conflictResolution?: ConflictResolutionValue;
-  backend?: { baseUrl: string; wsPath?: string; getToken?: () => string | Promise<string> };
-  supabase?: { client: unknown; filter?: string; schema?: string };
+  backend?: {
+    baseUrl: string;
+    wsPath?: string;
+    getToken?: () => string | Promise<string>;
+    onStatus?: (status: string) => void;
+  };
+  supabase?: {
+    client: unknown;
+    filter?: string;
+    schema?: string;
+    onStatus?: (status: string) => void;
+  };
   hydrateFetch?: (table: string) => Promise<ChangeEvent[]>;
   lease?: {
     client: LeaseLockClient;
@@ -287,4 +401,9 @@ export function startSync(opts: {
     flushOnAcquire?: boolean;
     onLost?: (err: LeaseLostError) => void;
   };
-}): Promise<{ client: SyncClient; lease: SyncLease | null; stop(): void }>;
+}): Promise<{
+  client: SyncClient;
+  lease: SyncLease | null;
+  lifecycle: AppLifecycleView;
+  stop(): Promise<void>;
+}>;

@@ -10,6 +10,10 @@ import {
   type WriteResult,
   reconcile,
   startSync,
+  AppLifecycleMachine,
+  LifecycleEvent,
+  TransitionOutcome,
+  type AppLifecycleView,
 } from "../src/index.js";
 
 const store = new MemoryStore();
@@ -39,5 +43,15 @@ const _decision = reconcile({ version: change.version, dirty: false }, change);
 
 // startSync wires both transports.
 const _started = startSync({ actor: "d", tables: ["products"], store });
+const lifecycle = new AppLifecycleMachine();
+const _transition: "applied" | "stuttered" | "stale" | "rejected" =
+  lifecycle.dispatch(LifecycleEvent.startRequested());
+const _applied: "applied" = TransitionOutcome.APPLIED;
+const _view: AppLifecycleView = lifecycle;
+const _managed = _started.then(async (session) => {
+  const _phase: string = session.lifecycle.snapshot.phase;
+  const _canWrite: boolean = session.lifecycle.capabilities.canWrite;
+  await session.stop();
+});
 
 export {};

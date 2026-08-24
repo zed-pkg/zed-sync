@@ -12,6 +12,12 @@ protocol/conformance.json ── the shared golden fixture (reconcile · echoes 
    ├── JS    sdk/test/conformance.test.mjs         (node --test)
    └── Dart  dart/zed_sync/test/conformance_test.dart (dart test)
 
+protocol/formal-app-lifecycle.json ── shared formal refinement traces
+   │
+   ├── Rust  tests/formal_app_lifecycle.rs
+   ├── JS    sdk/test/formal-app-lifecycle.test.mjs
+   └── Dart  dart/zed_sync/test/formal_app_lifecycle_test.dart
+
 end-to-end (per runtime):
    ├── JS    sdk/test/e2e_*.test.mjs   — SimServer + the REAL transports
    ├── JS    sdk/test/browser/idb.browser.test.mjs — IndexedDbStore in real headless Chromium

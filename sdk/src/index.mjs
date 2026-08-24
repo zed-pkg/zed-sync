@@ -24,6 +24,17 @@ export {
 } from "./telemetry.mjs";
 export { MemoryStore, IndexedDbStore, DEFAULT_MAX_QUEUE_LENGTH } from "./store.mjs";
 export { SyncClient } from "./client.mjs";
+export {
+  AppLifecycleMachine,
+  AppPhase,
+  LifecycleOperation,
+  LifecycleFailure,
+  TransitionOutcome,
+  LifecycleEvent,
+  LifecycleOperationError,
+  appCapabilities,
+  assertAppLifecycleInvariant,
+} from "./lifecycle.mjs";
 export { decodeBackendFrame, decodeSupabaseChange } from "./transports/decode.mjs";
 export { startSupabase } from "./transports/supabase.mjs";
 export { makeBackendSender, startBackendStream } from "./transports/backend.mjs";

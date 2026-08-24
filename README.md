@@ -23,8 +23,9 @@ zed-sync
 │   ├── change-event.schema.json  the wire envelope
 │   ├── write-policy.schema.json  WriteMode / ErrorPolicy / ConflictResolution enums
 │   ├── conformance.json          golden cases — Rust, JS, AND Dart all run these
-│   └── formal-write-lifecycle.*  schema + concrete three-runtime refinement traces
-├── formal/                       Quint state machine + schema-v1 fmctl manifest
+│   ├── formal-write-lifecycle.*  exact-key queue refinement traces
+│   └── formal-app-lifecycle.*    cross-runtime session-state refinement traces
+├── formal/                       Quint write + application lifecycle machines
 ├── src/ (zed-sync-core, Rust)    pure reconcile / on_ack / echo + HLC (src/hlc.rs)
 │   └── wasm.rs                    wasm-bindgen JSON ABI (--features wasm)
 ├── postgres/zed_sync.sql         server: HLC trigger, monotonic timestamps, outbox, sync_sequence
@@ -66,12 +67,13 @@ zed-sync
    `zed-clients` consumes them — so an app's generated I/O and ORM types line up
    with what zed-sync moves over the wire.
 
-4. **Executable formal safety for critical state.** The finite Quint model in
-   `formal/` exhaustively checks exact-key queue retirement, late/duplicate ack
-   safety, disconnect retry, and explicit server-wins conflict transitions.
-   Concrete HLC/write-key traces are constrained by JSON Schema and replayed by
-   Rust, JavaScript/TypeScript, and Dart. See [formal/README.md](formal/README.md)
-   for the proof boundary and witness claims.
+4. **Executable formal safety for critical state.** The finite Quint models in
+   `formal/` exhaustively check both exact-key write retirement and the whole
+   application/session lifecycle: start, online/offline operation, stop,
+   failure, explicit reconciliation, and stale async completions. JSON
+   Schema-constrained traces are replayed by Rust, JavaScript/TypeScript, and
+   Dart reducers. See [formal/README.md](formal/README.md) for the precise proof
+   and environment boundary.
 
 ## Quickstart (browser)
 
@@ -79,7 +81,7 @@ zed-sync
 import { startSync, WriteMode } from "@zed-pkg/sync";
 import { createClient } from "@supabase/supabase-js"; // YOUR dep, not ours
 
-const { client } = await startSync({
+const session = await startSync({
   actor: crypto.randomUUID(),
   tables: ["products", "orders"],
   backend: { baseUrl: location.origin, getToken },
@@ -88,9 +90,13 @@ const { client } = await startSync({
 });
 
 // optimistic write: local first, synced in the background
-await client.write("products", "p1", { id: "p1", name: "Ball" });
+await session.client.write("products", "p1", { id: "p1", name: "Ball" });
 // or fully server-authoritative:
-await client.write("orders", "o1", { id: "o1" }, { mode: WriteMode.SERVER_FIRST });
+await session.client.write("orders", "o1", { id: "o1" }, { mode: WriteMode.SERVER_FIRST });
+
+// `stop()` revokes transports/lease authority before publishing `stopped`.
+// A retained client is capability-gated and rejects writes after this resolves.
+await session.stop();
 ```
 
 ## Build & test
@@ -100,7 +106,7 @@ cargo test                                   # Rust core + shared conformance
 npm --prefix sdk install && npm --prefix sdk test    # JS SDK + shared conformance
 npm --prefix sdk run typecheck               # validate the shipped .d.ts
 cd dart/zed_sync && dart test                # Dart core + shared conformance
-fmctl validate && fmctl check && fmctl simulate && fmctl verify
+nix develop --no-update-lock-file -c agent-check formal
 ```
 
 The pinned contributor environment runs every runtime, formatter, WASM rebuild,

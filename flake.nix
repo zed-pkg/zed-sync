@@ -27,6 +27,7 @@
           cacert
           dart
           git
+          jdk17
           jq
           nix
           nixfmt

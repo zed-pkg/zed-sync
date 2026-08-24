@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zed-pkg.github.io/zed-sync/formal-app-lifecycle.schema.json",
+  "title": "zed-sync formal app lifecycle refinement traces",
+  "type": "object",
+  "required": ["schema_version", "model", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "enum": [1] },
+    "model": { "type": "string", "enum": ["app-lifecycle-v1"] },
+    "cases": {
+      "type": "array",
+      "minItems": 6,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["name", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "steps": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/step" }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["event", "outcome", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "$ref": "#/$defs/event" },
+        "outcome": {
+          "type": "string",
+          "enum": ["applied", "stuttered", "stale", "rejected"]
+        },
+        "state": { "$ref": "#/$defs/state" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "start_requested",
+            "start_succeeded",
+            "start_failed",
+            "connectivity_changed",
+            "runtime_failed",
+            "stop_requested",
+            "stop_succeeded",
+            "stop_failed",
+            "reconcile_requested"
+          ]
+        },
+        "token": { "type": "integer", "minimum": 1 },
+        "online": { "type": "boolean" }
+      }
+    },
+    "state": {
+      "type": "object",
+      "required": ["phase", "operation", "generation", "active_token", "desired_running", "online", "failure"],
+      "additionalProperties": false,
+      "properties": {
+        "phase": { "type": "string", "enum": ["stopped", "starting", "online", "offline", "stopping", "failed"] },
+        "operation": { "type": "string", "enum": ["none", "start", "stop", "reconcile"] },
+        "generation": { "type": "integer", "minimum": 0 },
+        "active_token": { "type": ["integer", "null"], "minimum": 1 },
+        "desired_running": { "type": "boolean" },
+        "online": { "type": "boolean" },
+        "failure": { "type": ["string", "null"], "enum": ["start", "runtime", "stop", null] }
+      }
+    }
+  }
+}

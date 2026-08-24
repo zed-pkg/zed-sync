@@ -9,6 +9,7 @@ import {
   LeaseTimeoutError,
 } from "../src/lease.mjs";
 import { startSync } from "../src/start.mjs";
+import { AppPhase, LifecycleOperationError } from "../src/lifecycle.mjs";
 import { MemoryStore } from "../src/store.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -346,7 +347,7 @@ test("startSync drains the inherited queue with fencing headers after winning th
   stop();
 });
 
-test("startSync omits fencing headers once the lease is lost", async (t) => {
+test("startSync fails closed and sends nothing once the lease is lost", async (t) => {
   let renewShouldFail = false;
   const handle = makeHandle({
     renew: () => {
@@ -373,7 +374,7 @@ test("startSync omits fencing headers once the lease is lost", async (t) => {
     globalThis.WebSocket = RealWebSocket;
   });
 
-  const { client: sync, lease, stop } = await startSync({
+  const { client: sync, lease, lifecycle, stop } = await startSync({
     actor: "device-1",
     tables: ["notes"],
     store: new MemoryStore(),
@@ -387,11 +388,16 @@ test("startSync omits fencing headers once the lease is lost", async (t) => {
   renewShouldFail = true;
   await sleep(60);
   assert.equal(lease.held, false);
+  assert.equal(lifecycle.snapshot.phase, AppPhase.FAILED);
 
-  await sync.write("notes", "n2", { title: "after loss" });
-  const lastHeaders = fetchCalls.at(-1).init.headers;
-  assert.equal(lastHeaders["x-zed-sync-fencing-token"], undefined, "no stale token after loss");
-  stop();
+  const sentBeforeRejectedWrite = fetchCalls.length;
+  await assert.rejects(
+    () => sync.write("notes", "n2", { title: "after loss" }),
+    LifecycleOperationError,
+  );
+  assert.equal(fetchCalls.length, sentBeforeRejectedWrite, "no unfenced request after authority loss");
+  await stop();
+  assert.equal(lifecycle.snapshot.phase, AppPhase.STOPPED);
 });
 
 test("startSync onLost stops transports and forwards the error", async (t) => {

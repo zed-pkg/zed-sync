@@ -14,11 +14,16 @@
 //! `docs/protocol.md`.
 
 pub mod hlc;
+pub mod lifecycle;
 pub mod policy;
 #[cfg(feature = "wasm")]
 mod wasm;
 
 pub use hlc::Hlc;
+pub use lifecycle::{
+    AppCapabilities, AppLifecycleMachine, AppLifecycleSnapshot, AppPhase, LifecycleEvent,
+    LifecycleFailure, LifecycleOperation, TransitionOutcome,
+};
 pub use policy::{ConflictResolution, ErrorPolicy, WriteMode};
 
 use serde::{Deserialize, Serialize};

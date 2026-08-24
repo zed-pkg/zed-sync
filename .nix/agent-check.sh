@@ -62,6 +62,44 @@ run_stage() {
         dart test
       )
       ;;
+    formal)
+      npx --yes --package=@informalsystems/quint@0.32.0 quint typecheck formal/write_lifecycle.qnt
+      npx --yes --package=@informalsystems/quint@0.32.0 quint typecheck formal/app_lifecycle.qnt
+      npx --yes --package=@informalsystems/quint@0.32.0 quint run \
+        formal/write_lifecycle.qnt \
+        --main=write_lifecycle \
+        --init=init \
+        --step=step \
+        --backend=typescript \
+        --max-samples=10000 \
+        --max-steps=24 \
+        --invariants write_lifecycle_safety \
+        --witnesses late_ack_preserves_newest_write retry_after_disconnect_reached server_wins_conflict_reached duplicate_ack_reached
+      npx --yes --package=@informalsystems/quint@0.32.0 quint verify \
+        formal/write_lifecycle.qnt \
+        --main=write_lifecycle \
+        --init=init \
+        --step=step \
+        --backend=tlc \
+        --invariants write_lifecycle_safety
+      npx --yes --package=@informalsystems/quint@0.32.0 quint run \
+        formal/app_lifecycle.qnt \
+        --main=app_lifecycle \
+        --init=init \
+        --step=step \
+        --backend=typescript \
+        --max-samples=10000 \
+        --max-steps=24 \
+        --invariants app_lifecycle_safety \
+        --witnesses online_reached offline_reached failed_reached stale_completion_reached rejected_transition_reached failure_reconciliation_reached
+      npx --yes --package=@informalsystems/quint@0.32.0 quint verify \
+        formal/app_lifecycle.qnt \
+        --main=app_lifecycle \
+        --init=init \
+        --step=step \
+        --backend=tlc \
+        --invariants app_lifecycle_safety
+      ;;
     wasm)
       ensure_rust
       ./sdk/build-wasm.sh
@@ -69,7 +107,7 @@ run_stage() {
       ;;
     all)
       local child
-      for child in preflight rust typescript dart wasm; do
+      for child in preflight rust typescript dart wasm formal; do
         run_stage "$child"
       done
       ;;
@@ -81,11 +119,11 @@ run_stage() {
 }
 
 case "${1:-all}" in
-  all | preflight | rust | typescript | dart | wasm)
+  all | preflight | rust | typescript | dart | wasm | formal)
     run_stage "${1:-all}"
     ;;
   *)
-    printf 'usage: agent-check [all|preflight|rust|typescript|dart|wasm]\n' >&2
+    printf 'usage: agent-check [all|preflight|rust|typescript|dart|wasm|formal]\n' >&2
     exit 64
     ;;
 esac
