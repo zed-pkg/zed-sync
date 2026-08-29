@@ -13,6 +13,8 @@ enum LifecycleFailure { start, runtime, stop }
 
 enum TransitionOutcome { applied, stuttered, stale, rejected }
 
+enum _TokenRelation { current, stale, invalid }
+
 sealed class LifecycleEvent {
   const LifecycleEvent();
 }
@@ -152,22 +154,31 @@ class AppCapabilities {
   final bool running;
 
   AppCapabilities._(AppLifecycleSnapshot snapshot)
-      : canStart = snapshot.phase == AppPhase.stopped,
+      : this._fromPhase(_validatedPhase(snapshot));
+
+  AppCapabilities._fromPhase(AppPhase? phase)
+      : canStart = phase == AppPhase.stopped,
         canStop = const {AppPhase.starting, AppPhase.online, AppPhase.offline}
-            .contains(snapshot.phase),
-        canWrite =
-            const {AppPhase.online, AppPhase.offline}.contains(snapshot.phase),
+            .contains(phase),
+        canWrite = const {AppPhase.online, AppPhase.offline}.contains(phase),
         canReceiveChanges = const {
           AppPhase.starting,
           AppPhase.online,
           AppPhase.offline
-        }.contains(snapshot.phase),
-        canFlush = snapshot.phase == AppPhase.online,
-        canReconcile = snapshot.phase == AppPhase.failed,
-        busy = const {AppPhase.starting, AppPhase.stopping}
-            .contains(snapshot.phase),
-        running =
-            const {AppPhase.online, AppPhase.offline}.contains(snapshot.phase);
+        }.contains(phase),
+        canFlush = phase == AppPhase.online,
+        canReconcile = phase == AppPhase.failed,
+        busy = const {AppPhase.starting, AppPhase.stopping}.contains(phase),
+        running = const {AppPhase.online, AppPhase.offline}.contains(phase);
+
+  static AppPhase? _validatedPhase(AppLifecycleSnapshot snapshot) {
+    try {
+      snapshot.validate();
+      return snapshot.phase;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 typedef LifecycleListener = void Function(
@@ -213,7 +224,14 @@ class AppLifecycleMachine {
         outcome = TransitionOutcome.applied;
       }
     } else if (event is StartSucceeded) {
-      if (!_isCurrent(event.token)) return TransitionOutcome.stale;
+      switch (_tokenRelation(event.token)) {
+        case _TokenRelation.stale:
+          return TransitionOutcome.stale;
+        case _TokenRelation.invalid:
+          return TransitionOutcome.rejected;
+        case _TokenRelation.current:
+          break;
+      }
       if (before.phase == AppPhase.starting) {
         next = _copy(
           before,
@@ -223,13 +241,27 @@ class AppLifecycleMachine {
         outcome = TransitionOutcome.applied;
       }
     } else if (event is StartFailed) {
-      if (!_isCurrent(event.token)) return TransitionOutcome.stale;
+      switch (_tokenRelation(event.token)) {
+        case _TokenRelation.stale:
+          return TransitionOutcome.stale;
+        case _TokenRelation.invalid:
+          return TransitionOutcome.rejected;
+        case _TokenRelation.current:
+          break;
+      }
       if (before.phase == AppPhase.starting) {
         next = _failed(LifecycleFailure.start);
         outcome = TransitionOutcome.applied;
       }
     } else if (event is ConnectivityChanged) {
-      if (!_isCurrent(event.token)) return TransitionOutcome.stale;
+      switch (_tokenRelation(event.token)) {
+        case _TokenRelation.stale:
+          return TransitionOutcome.stale;
+        case _TokenRelation.invalid:
+          return TransitionOutcome.rejected;
+        case _TokenRelation.current:
+          break;
+      }
       if (const {AppPhase.starting, AppPhase.online, AppPhase.offline}
           .contains(before.phase)) {
         final phase = before.phase == AppPhase.starting
@@ -245,7 +277,14 @@ class AppLifecycleMachine {
         }
       }
     } else if (event is RuntimeFailed) {
-      if (!_isCurrent(event.token)) return TransitionOutcome.stale;
+      switch (_tokenRelation(event.token)) {
+        case _TokenRelation.stale:
+          return TransitionOutcome.stale;
+        case _TokenRelation.invalid:
+          return TransitionOutcome.rejected;
+        case _TokenRelation.current:
+          break;
+      }
       if (const {AppPhase.starting, AppPhase.online, AppPhase.offline}
           .contains(before.phase)) {
         next = _failed(LifecycleFailure.runtime);
@@ -262,13 +301,27 @@ class AppLifecycleMachine {
             : TransitionOutcome.applied;
       }
     } else if (event is StopSucceeded) {
-      if (!_isCurrent(event.token)) return TransitionOutcome.stale;
+      switch (_tokenRelation(event.token)) {
+        case _TokenRelation.stale:
+          return TransitionOutcome.stale;
+        case _TokenRelation.invalid:
+          return TransitionOutcome.rejected;
+        case _TokenRelation.current:
+          break;
+      }
       if (before.phase == AppPhase.stopping) {
         next = AppLifecycleSnapshot(generation: before.generation);
         outcome = TransitionOutcome.applied;
       }
     } else if (event is StopFailed) {
-      if (!_isCurrent(event.token)) return TransitionOutcome.stale;
+      switch (_tokenRelation(event.token)) {
+        case _TokenRelation.stale:
+          return TransitionOutcome.stale;
+        case _TokenRelation.invalid:
+          return TransitionOutcome.rejected;
+        case _TokenRelation.current:
+          break;
+      }
       if (before.phase == AppPhase.stopping) {
         next = _failed(LifecycleFailure.stop);
         outcome = TransitionOutcome.applied;
@@ -286,7 +339,14 @@ class AppLifecycleMachine {
     return outcome;
   }
 
-  bool _isCurrent(int token) => _snapshot.activeToken == token;
+  _TokenRelation _tokenRelation(int token) => switch (token) {
+        <= 0 => _TokenRelation.invalid,
+        final candidate when _snapshot.activeToken == candidate =>
+          _TokenRelation.current,
+        final candidate when candidate <= _snapshot.generation =>
+          _TokenRelation.stale,
+        _ => _TokenRelation.invalid,
+      };
 
   AppLifecycleSnapshot? _beginStop(LifecycleOperation operation) {
     if (_snapshot.generation >= maxSafeGeneration) return null;

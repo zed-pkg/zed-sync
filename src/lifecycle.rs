@@ -57,6 +57,17 @@ pub enum LifecycleEvent {
     ReconcileRequested,
 }
 
+/// Authority relation between a callback token and the lifecycle generation.
+///
+/// Only a previously allocated, now-revoked token is stale. Zero and tokens
+/// from an unallocated future generation are invalid and must be rejected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TokenRelation {
+    Current,
+    Stale,
+    Invalid,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppLifecycleSnapshot {
     pub phase: AppPhase,
@@ -94,28 +105,59 @@ pub struct AppCapabilities {
     pub running: bool,
 }
 
+impl AppCapabilities {
+    pub const CLOSED: Self = Self {
+        can_start: false,
+        can_stop: false,
+        can_write: false,
+        can_receive_changes: false,
+        can_flush: false,
+        can_reconcile: false,
+        busy: false,
+        running: false,
+    };
+}
+
 impl AppLifecycleSnapshot {
     pub fn capabilities(&self) -> AppCapabilities {
-        let active = matches!(
-            self.phase,
-            AppPhase::Starting | AppPhase::Online | AppPhase::Offline
-        );
-        AppCapabilities {
-            can_start: self.phase == AppPhase::Stopped,
-            can_stop: active,
-            can_write: matches!(self.phase, AppPhase::Online | AppPhase::Offline),
-            can_receive_changes: active,
-            can_flush: self.phase == AppPhase::Online,
-            can_reconcile: self.phase == AppPhase::Failed,
-            busy: matches!(self.phase, AppPhase::Starting | AppPhase::Stopping),
-            running: matches!(self.phase, AppPhase::Online | AppPhase::Offline),
+        if self.validate().is_err() {
+            return AppCapabilities::CLOSED;
         }
+
+        let mut capabilities = AppCapabilities::CLOSED;
+        match self.phase {
+            AppPhase::Stopped => capabilities.can_start = true,
+            AppPhase::Starting => {
+                capabilities.can_stop = true;
+                capabilities.can_receive_changes = true;
+                capabilities.busy = true;
+            }
+            AppPhase::Online => {
+                capabilities.can_stop = true;
+                capabilities.can_write = true;
+                capabilities.can_receive_changes = true;
+                capabilities.can_flush = true;
+                capabilities.running = true;
+            }
+            AppPhase::Offline => {
+                capabilities.can_stop = true;
+                capabilities.can_write = true;
+                capabilities.can_receive_changes = true;
+                capabilities.running = true;
+            }
+            AppPhase::Stopping => capabilities.busy = true,
+            AppPhase::Failed => capabilities.can_reconcile = true,
+        }
+        capabilities
     }
 
     /// Check the phase/operation/token/failure coherence proved by the finite
     /// Quint model. This remains public so embedding apps can fail closed when
     /// decoding a persisted or foreign snapshot.
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.generation > AppLifecycleMachine::MAX_SAFE_GENERATION {
+            return Err("generation exceeds the shared exact-integer range");
+        }
         if let Some(token) = self.active_token {
             if token == 0 || token > self.generation {
                 return Err("active token must identify an allocated generation");
@@ -180,6 +222,10 @@ pub struct AppLifecycleMachine {
 }
 
 impl AppLifecycleMachine {
+    /// Largest generation represented exactly by every Rust, JavaScript, and
+    /// Dart refinement of this state machine.
+    pub const MAX_SAFE_GENERATION: u64 = 9_007_199_254_740_991;
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -196,7 +242,8 @@ impl AppLifecycleMachine {
             StartRequested => {
                 if self.snapshot.phase != Stopped {
                     TransitionOutcome::Rejected
-                } else if let Some(token) = self.snapshot.generation.checked_add(1) {
+                } else if self.snapshot.generation < Self::MAX_SAFE_GENERATION {
+                    let token = self.snapshot.generation + 1;
                     self.snapshot = AppLifecycleSnapshot {
                         phase: Starting,
                         operation: LifecycleOperation::Start,
@@ -211,12 +258,13 @@ impl AppLifecycleMachine {
                     TransitionOutcome::Rejected
                 }
             }
-            StartSucceeded { token } => {
-                if !self.is_current(token) {
-                    TransitionOutcome::Stale
-                } else if self.snapshot.phase != Starting {
+            StartSucceeded { token } => match self.token_relation(token) {
+                TokenRelation::Stale => TransitionOutcome::Stale,
+                TokenRelation::Invalid => TransitionOutcome::Rejected,
+                TokenRelation::Current if self.snapshot.phase != Starting => {
                     TransitionOutcome::Rejected
-                } else {
+                }
+                TokenRelation::Current => {
                     self.snapshot.phase = if self.snapshot.online {
                         Online
                     } else {
@@ -225,23 +273,27 @@ impl AppLifecycleMachine {
                     self.snapshot.operation = LifecycleOperation::None;
                     TransitionOutcome::Applied
                 }
-            }
-            StartFailed { token } => {
-                if !self.is_current(token) {
-                    TransitionOutcome::Stale
-                } else if self.snapshot.phase != Starting {
+            },
+            StartFailed { token } => match self.token_relation(token) {
+                TokenRelation::Stale => TransitionOutcome::Stale,
+                TokenRelation::Invalid => TransitionOutcome::Rejected,
+                TokenRelation::Current if self.snapshot.phase != Starting => {
                     TransitionOutcome::Rejected
-                } else {
+                }
+                TokenRelation::Current => {
                     self.fail(LifecycleFailure::Start);
                     TransitionOutcome::Applied
                 }
-            }
-            ConnectivityChanged { token, online } => {
-                if !self.is_current(token) {
-                    TransitionOutcome::Stale
-                } else if !matches!(self.snapshot.phase, Starting | Online | Offline) {
+            },
+            ConnectivityChanged { token, online } => match self.token_relation(token) {
+                TokenRelation::Stale => TransitionOutcome::Stale,
+                TokenRelation::Invalid => TransitionOutcome::Rejected,
+                TokenRelation::Current
+                    if !matches!(self.snapshot.phase, Starting | Online | Offline) =>
+                {
                     TransitionOutcome::Rejected
-                } else {
+                }
+                TokenRelation::Current => {
                     let target = if self.snapshot.phase == Starting {
                         Starting
                     } else if online {
@@ -257,45 +309,50 @@ impl AppLifecycleMachine {
                         TransitionOutcome::Applied
                     }
                 }
-            }
-            RuntimeFailed { token } => {
-                if !self.is_current(token) {
-                    TransitionOutcome::Stale
-                } else if !matches!(self.snapshot.phase, Starting | Online | Offline) {
+            },
+            RuntimeFailed { token } => match self.token_relation(token) {
+                TokenRelation::Stale => TransitionOutcome::Stale,
+                TokenRelation::Invalid => TransitionOutcome::Rejected,
+                TokenRelation::Current
+                    if !matches!(self.snapshot.phase, Starting | Online | Offline) =>
+                {
                     TransitionOutcome::Rejected
-                } else {
+                }
+                TokenRelation::Current => {
                     self.fail(LifecycleFailure::Runtime);
                     TransitionOutcome::Applied
                 }
-            }
+            },
             StopRequested => match self.snapshot.phase {
                 Stopped | Stopping => TransitionOutcome::Stuttered,
                 Failed => TransitionOutcome::Rejected,
                 Starting | Online | Offline => self.begin_stop(LifecycleOperation::Stop),
             },
-            StopSucceeded { token } => {
-                if !self.is_current(token) {
-                    TransitionOutcome::Stale
-                } else if self.snapshot.phase != Stopping {
+            StopSucceeded { token } => match self.token_relation(token) {
+                TokenRelation::Stale => TransitionOutcome::Stale,
+                TokenRelation::Invalid => TransitionOutcome::Rejected,
+                TokenRelation::Current if self.snapshot.phase != Stopping => {
                     TransitionOutcome::Rejected
-                } else {
+                }
+                TokenRelation::Current => {
                     self.snapshot = AppLifecycleSnapshot {
                         generation: self.snapshot.generation,
                         ..AppLifecycleSnapshot::default()
                     };
                     TransitionOutcome::Applied
                 }
-            }
-            StopFailed { token } => {
-                if !self.is_current(token) {
-                    TransitionOutcome::Stale
-                } else if self.snapshot.phase != Stopping {
+            },
+            StopFailed { token } => match self.token_relation(token) {
+                TokenRelation::Stale => TransitionOutcome::Stale,
+                TokenRelation::Invalid => TransitionOutcome::Rejected,
+                TokenRelation::Current if self.snapshot.phase != Stopping => {
                     TransitionOutcome::Rejected
-                } else {
+                }
+                TokenRelation::Current => {
                     self.fail(LifecycleFailure::Stop);
                     TransitionOutcome::Applied
                 }
-            }
+            },
             ReconcileRequested => {
                 if self.snapshot.phase == Failed {
                     self.begin_stop(LifecycleOperation::Reconcile)
@@ -309,14 +366,20 @@ impl AppLifecycleMachine {
         outcome
     }
 
-    fn is_current(&self, token: u64) -> bool {
-        self.snapshot.active_token == Some(token)
+    fn token_relation(&self, token: u64) -> TokenRelation {
+        match (token, self.snapshot.active_token) {
+            (0, _) => TokenRelation::Invalid,
+            (candidate, Some(active)) if candidate == active => TokenRelation::Current,
+            (candidate, _) if candidate <= self.snapshot.generation => TokenRelation::Stale,
+            _ => TokenRelation::Invalid,
+        }
     }
 
     fn begin_stop(&mut self, operation: LifecycleOperation) -> TransitionOutcome {
-        let Some(token) = self.snapshot.generation.checked_add(1) else {
+        if self.snapshot.generation >= Self::MAX_SAFE_GENERATION {
             return TransitionOutcome::Rejected;
-        };
+        }
+        let token = self.snapshot.generation + 1;
         self.snapshot = AppLifecycleSnapshot {
             phase: AppPhase::Stopping,
             operation,
@@ -364,6 +427,70 @@ mod tests {
             TransitionOutcome::Stale
         );
         assert_eq!(machine.snapshot().phase, AppPhase::Stopping);
+    }
+
+    #[test]
+    fn only_previously_allocated_tokens_are_stale() {
+        let mut machine = AppLifecycleMachine::new();
+        assert_eq!(
+            machine.dispatch(LifecycleEvent::StartRequested),
+            TransitionOutcome::Applied
+        );
+        let snapshot = machine.snapshot();
+
+        assert_eq!(
+            machine.dispatch(LifecycleEvent::StartSucceeded { token: 0 }),
+            TransitionOutcome::Rejected
+        );
+        assert_eq!(machine.snapshot(), snapshot);
+        assert_eq!(
+            machine.dispatch(LifecycleEvent::StartSucceeded { token: 2 }),
+            TransitionOutcome::Rejected
+        );
+        assert_eq!(machine.snapshot(), snapshot);
+
+        assert_eq!(
+            machine.dispatch(LifecycleEvent::StopRequested),
+            TransitionOutcome::Applied
+        );
+        let stopping = machine.snapshot();
+        assert_eq!(
+            machine.dispatch(LifecycleEvent::StartSucceeded { token: 1 }),
+            TransitionOutcome::Stale
+        );
+        assert_eq!(machine.snapshot(), stopping);
+    }
+
+    #[test]
+    fn malformed_foreign_snapshot_has_no_capabilities() {
+        let malformed = AppLifecycleSnapshot {
+            phase: AppPhase::Online,
+            ..AppLifecycleSnapshot::default()
+        };
+
+        assert!(malformed.validate().is_err());
+        assert_eq!(malformed.capabilities(), AppCapabilities::CLOSED);
+    }
+
+    #[test]
+    fn generation_is_bounded_by_the_cross_runtime_exact_integer_range() {
+        let at_limit = AppLifecycleSnapshot {
+            generation: AppLifecycleMachine::MAX_SAFE_GENERATION,
+            ..AppLifecycleSnapshot::default()
+        };
+        assert!(at_limit.validate().is_ok());
+        let mut machine = AppLifecycleMachine { snapshot: at_limit };
+        assert_eq!(
+            machine.dispatch(LifecycleEvent::StartRequested),
+            TransitionOutcome::Rejected
+        );
+
+        let beyond_limit = AppLifecycleSnapshot {
+            generation: AppLifecycleMachine::MAX_SAFE_GENERATION + 1,
+            ..AppLifecycleSnapshot::default()
+        };
+        assert!(beyond_limit.validate().is_err());
+        assert_eq!(beyond_limit.capabilities(), AppCapabilities::CLOSED);
     }
 
     #[test]

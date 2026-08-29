@@ -18,6 +18,7 @@ module app_lifecycle {
     online: bool,
     failure: Failure,
     saw_stale_completion: bool,
+    saw_invalid_completion: bool,
     saw_rejected_transition: bool,
     saw_failure_reconciliation: bool,
   }
@@ -34,6 +35,7 @@ module app_lifecycle {
       online: false,
       failure: NoFailure,
       saw_stale_completion: false,
+      saw_invalid_completion: false,
       saw_rejected_transition: false,
       saw_failure_reconciliation: false,
     }
@@ -191,11 +193,27 @@ module app_lifecycle {
     },
   }
 
-  // Abstract a completion carrying any older token. The executable reducers
-  // compare exact tokens; mismatch is an explicit stutter.
+  // Abstract a completion carrying previously allocated but revoked authority.
+  // With an active generation this requires an older positive token; without
+  // one, the just-revoked generation is stale as well.
   action stale_completion = all {
-    s.generation >= 2,
+    s.generation >= 1,
+    or {
+      s.active_token == 0,
+      s.generation >= 2,
+    },
     s' = { ...s, saw_stale_completion: true },
+  }
+
+  // Token zero and tokens beyond the allocated generation are impossible
+  // authority, not benign stale completions. They are rejected without
+  // changing operational state.
+  action invalid_completion = {
+    s' = {
+      ...s,
+      saw_invalid_completion: true,
+      saw_rejected_transition: true,
+    }
   }
 
   // Every invalid current-generation event is rejected without state change.
@@ -217,6 +235,7 @@ module app_lifecycle {
     stop_failed_closed,
     request_failure_reconciliation,
     stale_completion,
+    invalid_completion,
     rejected_transition,
     idle,
   }
@@ -282,6 +301,34 @@ module app_lifecycle {
     s.failure != NoFailure,
   }
 
+  // Runtime capabilities are pure phase projections, so every phase that can
+  // receive or mutate data must still own current generation authority. A
+  // foreign snapshot outside these predicates is closed by each refinement
+  // before capabilities are derived.
+  val derived_capabilities_are_authorized = and {
+    not(or {
+      s.phase == Starting,
+      s.phase == Online,
+      s.phase == Offline,
+    }) or and {
+      s.active_token == s.generation,
+      s.active_token > 0,
+      s.desired_running,
+      s.failure == NoFailure,
+    },
+    not(or {
+      s.phase == Online,
+      s.phase == Offline,
+    }) or and {
+      s.operation == NoOperation,
+      s.active_token == s.generation,
+      s.active_token > 0,
+      s.desired_running,
+    },
+    s.phase != Online or s.online,
+    s.phase != Failed or failed_is_closed,
+  }
+
   val app_lifecycle_safety = and {
     generation_is_bounded,
     stopped_is_quiescent,
@@ -290,12 +337,14 @@ module app_lifecycle {
     offline_is_active,
     stopping_revokes_capabilities,
     failed_is_closed,
+    derived_capabilities_are_authorized,
   }
 
   val online_reached = s.phase == Online
   val offline_reached = s.phase == Offline
   val failed_reached = s.phase == Failed
   val stale_completion_reached = s.saw_stale_completion
+  val invalid_completion_rejected = s.saw_invalid_completion
   val rejected_transition_reached = s.saw_rejected_transition
   val failure_reconciliation_reached = s.saw_failure_reconciliation
 }

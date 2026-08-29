@@ -8,6 +8,7 @@ import {
   AppLifecycleMachine,
   AppPhase,
   LifecycleEvent,
+  appCapabilities,
   assertAppLifecycleInvariant,
 } from "../src/lifecycle.mjs";
 import { validate } from "./schema_validate.mjs";
@@ -37,6 +38,23 @@ const wireSnapshot = (snapshot) => ({
 
 test("formal app-lifecycle fixture is schema-valid", () => {
   assert.deepEqual(validate(schema, fixture), []);
+});
+
+test("formal event schema enforces exact discriminated variants", () => {
+  const invalidEvents = [
+    { type: "start_succeeded" },
+    { type: "start_requested", token: 1 },
+    { type: "connectivity_changed", token: 1 },
+    { type: "runtime_failed", token: 1, online: false },
+    { type: "stop_succeeded", token: -1 },
+    { type: "stop_succeeded", token: Number.MAX_SAFE_INTEGER + 1 },
+  ];
+
+  for (const event of invalidEvents) {
+    const malformed = structuredClone(fixture);
+    malformed.cases[0].steps[0].event = event;
+    assert.notDeepEqual(validate(schema, malformed), [], JSON.stringify(event));
+  }
 });
 
 test("JavaScript replays every formal app-lifecycle trace", () => {
@@ -95,6 +113,46 @@ test("stale completion is a stutter and failed capabilities are closed", () => {
     canReceiveChanges: false,
     canFlush: false,
     canReconcile: true,
+    busy: false,
+    running: false,
+  });
+});
+
+test("only previously allocated callback tokens are stale", () => {
+  const machine = new AppLifecycleMachine();
+  assert.equal(machine.dispatch(LifecycleEvent.startRequested()), "applied");
+  const starting = machine.snapshot;
+
+  assert.equal(machine.dispatch(LifecycleEvent.startSucceeded(0)), "rejected");
+  assert.equal(machine.snapshot, starting, "zero token preserves state");
+  assert.equal(machine.dispatch(LifecycleEvent.startSucceeded(2)), "rejected");
+  assert.equal(machine.snapshot, starting, "future token preserves state");
+
+  assert.equal(machine.dispatch(LifecycleEvent.stopRequested()), "applied");
+  const stopping = machine.snapshot;
+  assert.equal(machine.dispatch(LifecycleEvent.startSucceeded(1)), "stale");
+  assert.equal(machine.snapshot, stopping, "allocated old token preserves state");
+});
+
+test("malformed foreign snapshots have no capabilities", () => {
+  const malformed = {
+    phase: AppPhase.ONLINE,
+    operation: "none",
+    generation: 1,
+    activeToken: null,
+    desiredRunning: false,
+    online: true,
+    failure: null,
+  };
+
+  assert.throws(() => assertAppLifecycleInvariant(malformed));
+  assert.deepEqual(appCapabilities(malformed), {
+    canStart: false,
+    canStop: false,
+    canWrite: false,
+    canReceiveChanges: false,
+    canFlush: false,
+    canReconcile: false,
     busy: false,
     running: false,
   });

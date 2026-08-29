@@ -186,6 +186,41 @@
           "state": { "phase": "stopped", "operation": "none", "generation": 3, "active_token": null, "desired_running": false, "online": false, "failure": null }
         }
       ]
+    },
+    {
+      "name": "invalid authority rejects while allocated old authority is stale",
+      "steps": [
+        {
+          "event": { "type": "start_requested" },
+          "outcome": "applied",
+          "state": { "phase": "starting", "operation": "start", "generation": 1, "active_token": 1, "desired_running": true, "online": false, "failure": null }
+        },
+        {
+          "event": { "type": "start_succeeded", "token": 2 },
+          "outcome": "rejected",
+          "state": { "phase": "starting", "operation": "start", "generation": 1, "active_token": 1, "desired_running": true, "online": false, "failure": null }
+        },
+        {
+          "event": { "type": "start_succeeded", "token": 0 },
+          "outcome": "rejected",
+          "state": { "phase": "starting", "operation": "start", "generation": 1, "active_token": 1, "desired_running": true, "online": false, "failure": null }
+        },
+        {
+          "event": { "type": "stop_requested" },
+          "outcome": "applied",
+          "state": { "phase": "stopping", "operation": "stop", "generation": 2, "active_token": 2, "desired_running": false, "online": false, "failure": null }
+        },
+        {
+          "event": { "type": "start_succeeded", "token": 1 },
+          "outcome": "stale",
+          "state": { "phase": "stopping", "operation": "stop", "generation": 2, "active_token": 2, "desired_running": false, "online": false, "failure": null }
+        },
+        {
+          "event": { "type": "stop_succeeded", "token": 2 },
+          "outcome": "applied",
+          "state": { "phase": "stopped", "operation": "none", "generation": 2, "active_token": null, "desired_running": false, "online": false, "failure": null }
+        }
+      ]
     }
   ]
 }

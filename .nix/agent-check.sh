@@ -91,7 +91,7 @@ run_stage() {
         --max-samples=10000 \
         --max-steps=24 \
         --invariants app_lifecycle_safety \
-        --witnesses online_reached offline_reached failed_reached stale_completion_reached rejected_transition_reached failure_reconciliation_reached
+        --witnesses online_reached offline_reached failed_reached stale_completion_reached invalid_completion_rejected rejected_transition_reached failure_reconciliation_reached
       npx --yes --package=@informalsystems/quint@0.32.0 quint verify \
         formal/app_lifecycle.qnt \
         --main=app_lifecycle \

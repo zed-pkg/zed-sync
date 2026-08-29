@@ -28,49 +28,71 @@ struct Step {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum FixtureEvent {
-    StartRequested,
+    StartRequested {},
     StartSucceeded { token: u64 },
     StartFailed { token: u64 },
     ConnectivityChanged { token: u64, online: bool },
     RuntimeFailed { token: u64 },
-    StopRequested,
+    StopRequested {},
     StopSucceeded { token: u64 },
     StopFailed { token: u64 },
-    ReconcileRequested,
+    ReconcileRequested {},
 }
 
 impl FixtureEvent {
     fn name(&self) -> &'static str {
         match self {
-            Self::StartRequested => "start_requested",
+            Self::StartRequested {} => "start_requested",
             Self::StartSucceeded { .. } => "start_succeeded",
             Self::StartFailed { .. } => "start_failed",
             Self::ConnectivityChanged { .. } => "connectivity_changed",
             Self::RuntimeFailed { .. } => "runtime_failed",
-            Self::StopRequested => "stop_requested",
+            Self::StopRequested {} => "stop_requested",
             Self::StopSucceeded { .. } => "stop_succeeded",
             Self::StopFailed { .. } => "stop_failed",
-            Self::ReconcileRequested => "reconcile_requested",
+            Self::ReconcileRequested {} => "reconcile_requested",
         }
     }
 
     fn into_runtime(self) -> LifecycleEvent {
         match self {
-            Self::StartRequested => LifecycleEvent::StartRequested,
+            Self::StartRequested {} => LifecycleEvent::StartRequested,
             Self::StartSucceeded { token } => LifecycleEvent::StartSucceeded { token },
             Self::StartFailed { token } => LifecycleEvent::StartFailed { token },
             Self::ConnectivityChanged { token, online } => {
                 LifecycleEvent::ConnectivityChanged { token, online }
             }
             Self::RuntimeFailed { token } => LifecycleEvent::RuntimeFailed { token },
-            Self::StopRequested => LifecycleEvent::StopRequested,
+            Self::StopRequested {} => LifecycleEvent::StopRequested,
             Self::StopSucceeded { token } => LifecycleEvent::StopSucceeded { token },
             Self::StopFailed { token } => LifecycleEvent::StopFailed { token },
-            Self::ReconcileRequested => LifecycleEvent::ReconcileRequested,
+            Self::ReconcileRequested {} => LifecycleEvent::ReconcileRequested,
         }
     }
+}
+
+#[test]
+fn rust_fixture_event_union_rejects_inexact_variants() {
+    for malformed in [
+        serde_json::json!({ "type": "start_succeeded" }),
+        serde_json::json!({ "type": "start_requested", "token": 1 }),
+        serde_json::json!({ "type": "connectivity_changed", "token": 1 }),
+        serde_json::json!({ "type": "runtime_failed", "token": 1, "online": false }),
+        serde_json::json!({ "type": "stop_succeeded", "token": -1 }),
+    ] {
+        assert!(
+            serde_json::from_value::<FixtureEvent>(malformed.clone()).is_err(),
+            "inexact event variant must be rejected: {malformed}"
+        );
+    }
+
+    serde_json::from_value::<FixtureEvent>(serde_json::json!({
+        "type": "stop_succeeded",
+        "token": 0
+    }))
+    .expect("zero is a structurally valid input that the reducer rejects semantically");
 }
 
 #[test]

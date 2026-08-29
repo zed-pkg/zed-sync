@@ -33,6 +33,12 @@ export const TransitionOutcome = Object.freeze({
   REJECTED: "rejected",
 });
 
+const TokenRelation = Object.freeze({
+  CURRENT: "current",
+  STALE: "stale",
+  INVALID: "invalid",
+});
+
 export const LifecycleEvent = Object.freeze({
   startRequested: () => Object.freeze({ type: "start_requested" }),
   startSucceeded: (token) => Object.freeze({ type: "start_succeeded", token }),
@@ -67,8 +73,24 @@ const initialSnapshot = (generation = 0) =>
     failure: null,
   });
 
-/** Derive every UI/runtime capability from the phase; never mirror booleans. */
+const CLOSED_CAPABILITIES = Object.freeze({
+  canStart: false,
+  canStop: false,
+  canWrite: false,
+  canReceiveChanges: false,
+  canFlush: false,
+  canReconcile: false,
+  busy: false,
+  running: false,
+});
+
+/** Validate first, then derive capabilities from phase; malformed input closes all authority. */
 export function appCapabilities(snapshot) {
+  try {
+    assertAppLifecycleInvariant(snapshot);
+  } catch {
+    return CLOSED_CAPABILITIES;
+  }
   const active = [AppPhase.STARTING, AppPhase.ONLINE, AppPhase.OFFLINE].includes(snapshot.phase);
   return Object.freeze({
     canStart: snapshot.phase === AppPhase.STOPPED,
@@ -187,7 +209,9 @@ export class AppLifecycleMachine {
         break;
       }
       case "start_succeeded": {
-        if (!this.#isCurrent(event.token)) return TransitionOutcome.STALE;
+        const relation = this.#tokenRelation(event.token);
+        if (relation === TokenRelation.STALE) return TransitionOutcome.STALE;
+        if (relation === TokenRelation.INVALID) break;
         if (before.phase !== AppPhase.STARTING) break;
         next = {
           ...before,
@@ -198,14 +222,18 @@ export class AppLifecycleMachine {
         break;
       }
       case "start_failed": {
-        if (!this.#isCurrent(event.token)) return TransitionOutcome.STALE;
+        const relation = this.#tokenRelation(event.token);
+        if (relation === TokenRelation.STALE) return TransitionOutcome.STALE;
+        if (relation === TokenRelation.INVALID) break;
         if (before.phase !== AppPhase.STARTING) break;
         next = this.#failed(LifecycleFailure.START);
         outcome = TransitionOutcome.APPLIED;
         break;
       }
       case "connectivity_changed": {
-        if (!this.#isCurrent(event.token)) return TransitionOutcome.STALE;
+        const relation = this.#tokenRelation(event.token);
+        if (relation === TokenRelation.STALE) return TransitionOutcome.STALE;
+        if (relation === TokenRelation.INVALID) break;
         if (![AppPhase.STARTING, AppPhase.ONLINE, AppPhase.OFFLINE].includes(before.phase)) break;
         if (typeof event.online !== "boolean") break;
         const phase =
@@ -223,7 +251,9 @@ export class AppLifecycleMachine {
         break;
       }
       case "runtime_failed": {
-        if (!this.#isCurrent(event.token)) return TransitionOutcome.STALE;
+        const relation = this.#tokenRelation(event.token);
+        if (relation === TokenRelation.STALE) return TransitionOutcome.STALE;
+        if (relation === TokenRelation.INVALID) break;
         if (![AppPhase.STARTING, AppPhase.ONLINE, AppPhase.OFFLINE].includes(before.phase)) break;
         next = this.#failed(LifecycleFailure.RUNTIME);
         outcome = TransitionOutcome.APPLIED;
@@ -239,14 +269,18 @@ export class AppLifecycleMachine {
         break;
       }
       case "stop_succeeded": {
-        if (!this.#isCurrent(event.token)) return TransitionOutcome.STALE;
+        const relation = this.#tokenRelation(event.token);
+        if (relation === TokenRelation.STALE) return TransitionOutcome.STALE;
+        if (relation === TokenRelation.INVALID) break;
         if (before.phase !== AppPhase.STOPPING) break;
         next = initialSnapshot(before.generation);
         outcome = TransitionOutcome.APPLIED;
         break;
       }
       case "stop_failed": {
-        if (!this.#isCurrent(event.token)) return TransitionOutcome.STALE;
+        const relation = this.#tokenRelation(event.token);
+        if (relation === TokenRelation.STALE) return TransitionOutcome.STALE;
+        if (relation === TokenRelation.INVALID) break;
         if (before.phase !== AppPhase.STOPPING) break;
         next = this.#failed(LifecycleFailure.STOP);
         outcome = TransitionOutcome.APPLIED;
@@ -265,8 +299,11 @@ export class AppLifecycleMachine {
     return outcome;
   }
 
-  #isCurrent(token) {
-    return Number.isSafeInteger(token) && this.#snapshot.activeToken === token;
+  #tokenRelation(token) {
+    if (!Number.isSafeInteger(token) || token <= 0) return TokenRelation.INVALID;
+    if (this.#snapshot.activeToken === token) return TokenRelation.CURRENT;
+    if (token <= this.#snapshot.generation) return TokenRelation.STALE;
+    return TokenRelation.INVALID;
   }
 
   #beginStop(operation) {
