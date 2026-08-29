@@ -1,5 +1,5 @@
 // A tiny, dependency-free validator for the exact JSON Schema 2020-12 subset the
-// protocol/*.schema.json files use: type (incl. arrays + "integer"), enum,
+// protocol/*.schema.json files use: type (incl. arrays + "integer"), enum, oneOf,
 // required, properties, additionalProperties:false, pattern, min/max,
 // {min,max}Length, and array items/{min,max}Items, with local "#/$defs/..."
 // $ref resolution. Kept deliberately
@@ -13,6 +13,16 @@ export function validate(schema, value, root = schema, path = "$") {
 
   if (schema.$ref) {
     return validate(resolveRef(root, schema.$ref), value, root, path);
+  }
+
+  if (schema.oneOf) {
+    const matchingBranches = schema.oneOf.filter(
+      (branch) => validate(branch, value, root, path).length === 0,
+    ).length;
+    if (matchingBranches !== 1) {
+      errors.push(`${path}: expected exactly one oneOf branch, matched ${matchingBranches}`);
+      return errors;
+    }
   }
 
   if (schema.type !== undefined && !matchesType(schema.type, value)) {

@@ -42,28 +42,89 @@
       }
     },
     "event": {
-      "type": "object",
-      "required": ["type"],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "start_requested",
-            "start_succeeded",
-            "start_failed",
-            "connectivity_changed",
-            "runtime_failed",
-            "stop_requested",
-            "stop_succeeded",
-            "stop_failed",
-            "reconcile_requested"
-          ]
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["start_requested"] }
+          }
         },
-        "token": { "type": "integer", "minimum": 1 },
-        "online": { "type": "boolean" }
-      }
+        {
+          "type": "object",
+          "required": ["type", "token"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["start_succeeded"] },
+            "token": { "$ref": "#/$defs/token" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "token"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["start_failed"] },
+            "token": { "$ref": "#/$defs/token" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "token", "online"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["connectivity_changed"] },
+            "token": { "$ref": "#/$defs/token" },
+            "online": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "token"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["runtime_failed"] },
+            "token": { "$ref": "#/$defs/token" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["stop_requested"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "token"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["stop_succeeded"] },
+            "token": { "$ref": "#/$defs/token" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "token"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["stop_failed"] },
+            "token": { "$ref": "#/$defs/token" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["reconcile_requested"] }
+          }
+        }
+      ]
     },
+    "token": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
     "state": {
       "type": "object",
       "required": ["phase", "operation", "generation", "active_token", "desired_running", "online", "failure"],
@@ -71,8 +132,8 @@
       "properties": {
         "phase": { "type": "string", "enum": ["stopped", "starting", "online", "offline", "stopping", "failed"] },
         "operation": { "type": "string", "enum": ["none", "start", "stop", "reconcile"] },
-        "generation": { "type": "integer", "minimum": 0 },
-        "active_token": { "type": ["integer", "null"], "minimum": 1 },
+        "generation": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "active_token": { "type": ["integer", "null"], "minimum": 1, "maximum": 9007199254740991 },
         "desired_running": { "type": "boolean" },
         "online": { "type": "boolean" },
         "failure": { "type": ["string", "null"], "enum": ["start", "runtime", "stop", null] }

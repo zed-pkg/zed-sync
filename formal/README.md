@@ -19,8 +19,11 @@ The lifecycle is fail-closed:
 
 - UI/runtime capabilities are derived from the phase, never duplicated as
   mutable booleans;
+- persisted or foreign snapshots are validated before capability derivation,
+  and malformed combinations receive the all-closed capability set;
 - invalid current-generation events are rejected without mutation;
-- stale async completions stutter and cannot resurrect a stopped session;
+- only previously allocated, revoked async tokens are stale stutters;
+- zero and future/unallocated tokens are rejected without mutation;
 - startup/runtime/stop failures close write and receive capabilities; and
 - `failed` cannot restart directly—platform cleanup must explicitly reconcile
   it through `stopping` to `stopped`.
@@ -87,7 +90,8 @@ npx --yes --package=@informalsystems/quint@0.32.0 quint run formal/app_lifecycle
   --main=app_lifecycle --init=init --step=step --backend=typescript \
   --max-samples=10000 --max-steps=24 --invariants app_lifecycle_safety \
   --witnesses online_reached offline_reached failed_reached \
-    stale_completion_reached rejected_transition_reached failure_reconciliation_reached
+    stale_completion_reached invalid_completion_rejected \
+    rejected_transition_reached failure_reconciliation_reached
 npx --yes --package=@informalsystems/quint@0.32.0 quint verify formal/app_lifecycle.qnt \
   --main=app_lifecycle --init=init --step=step --backend=tlc \
   --invariants app_lifecycle_safety

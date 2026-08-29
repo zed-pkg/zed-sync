@@ -13,6 +13,7 @@ witnesses = [
   "offline_reached",
   "failed_reached",
   "stale_completion_reached",
+  "invalid_completion_rejected",
   "rejected_transition_reached",
   "failure_reconciliation_reached",
 ]

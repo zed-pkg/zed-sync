@@ -84,10 +84,37 @@ void main() {
     final machine = AppLifecycleMachine();
     machine.dispatch(const StartRequested());
     final startToken = machine.snapshot.activeToken!;
+    final starting = machine.snapshot;
+    expect(
+        machine.dispatch(const StartSucceeded(0)), TransitionOutcome.rejected);
+    expect(identical(machine.snapshot, starting), isTrue);
+    expect(machine.dispatch(StartSucceeded(startToken + 1)),
+        TransitionOutcome.rejected);
+    expect(identical(machine.snapshot, starting), isTrue);
+
     machine.dispatch(const StopRequested());
     final stopping = machine.snapshot;
     expect(
         machine.dispatch(StartSucceeded(startToken)), TransitionOutcome.stale);
     expect(identical(machine.snapshot, stopping), isTrue);
+  });
+
+  test('malformed foreign snapshots have no capabilities', () {
+    const malformed = AppLifecycleSnapshot(
+      phase: AppPhase.online,
+      generation: 1,
+      online: true,
+    );
+
+    expect(malformed.validate, throwsStateError);
+    final capabilities = malformed.capabilities;
+    expect(capabilities.canStart, isFalse);
+    expect(capabilities.canStop, isFalse);
+    expect(capabilities.canWrite, isFalse);
+    expect(capabilities.canReceiveChanges, isFalse);
+    expect(capabilities.canFlush, isFalse);
+    expect(capabilities.canReconcile, isFalse);
+    expect(capabilities.busy, isFalse);
+    expect(capabilities.running, isFalse);
   });
 }

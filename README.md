@@ -70,7 +70,8 @@ zed-sync
 4. **Executable formal safety for critical state.** The finite Quint models in
    `formal/` exhaustively check both exact-key write retirement and the whole
    application/session lifecycle: start, online/offline operation, stop,
-   failure, explicit reconciliation, and stale async completions. JSON
+   failure, explicit reconciliation, stale allocated completions, and rejected
+   zero/future authority. JSON
    Schema-constrained traces are replayed by Rust, JavaScript/TypeScript, and
    Dart reducers. See [formal/README.md](formal/README.md) for the precise proof
    and environment boundary.
