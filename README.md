@@ -37,6 +37,7 @@ zed-sync
 │       ├── merge.mjs             JSONB-aware deepMerge (prototype-pollution + depth hardened)
 │       ├── store.mjs             MemoryStore + IndexedDbStore (durable rows + write-queue)
 │       ├── client.mjs            applyChange / write / delete / flushQueue / hydrate
+│       ├── rxjs.mjs              optional read-only lifecycle Observables
 │       ├── transports/           supabase.mjs · backend.mjs (WS + HTTP) · decode.mjs (pure)
 │       └── start.mjs             startSync() — wire BOTH transports into one client
 └── dart/zed_sync/                Flutter/mobile: same HLC + reconcile + write policies
@@ -99,6 +100,25 @@ await session.client.write("orders", "o1", { id: "o1" }, { mode: WriteMode.SERVE
 // A retained client is capability-gated and rejects writes after this resolves.
 await session.stop();
 ```
+
+Apps that already use RxJS can observe the formally checked lifecycle without
+creating a second state store:
+
+```js
+import { observeCapabilities, observeLifecycle } from "@zed-pkg/sync/rxjs";
+
+const lifecycleSubscription = observeLifecycle(session.lifecycle).subscribe(renderStatus);
+const capabilitySubscription = observeCapabilities(session.lifecycle).subscribe(renderActions);
+
+// Each stream replays the current value, shares one machine listener, and
+// releases it when the final observer unsubscribes.
+lifecycleSubscription.unsubscribe();
+capabilitySubscription.unsubscribe();
+```
+
+The RxJS bridge is deliberately read-only: the Quint-refined reducer remains
+the sole transition authority. Install `rxjs@^7.8.2` only when importing the
+optional `@zed-pkg/sync/rxjs` subpath; the base SDK keeps no runtime dependency.
 
 ## Build & test
 

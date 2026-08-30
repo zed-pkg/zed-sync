@@ -23,7 +23,7 @@ dir = "zed_modules"
 include_readme = true
 tag_format = "v{version}"
 smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/sdk/package.json\" && test -f \"$ZED_PKG_TEST_TARGET/dart/zed_sync/pubspec.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/protocol/change-event.schema.json\""
-exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "tmp/**", "**/*.log", ".DS_Store", "**/target/**", "**/node_modules/**", "**/.dart_tool/**", "**/build/**", "sdk/pkg/**"]
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "tmp/**", "**/*.log", ".DS_Store", "Cargo.lock", "pubspec.lock", "dart/zed_sync/pubspec.lock", "**/target/**", "**/node_modules/**", "**/.dart_tool/**", "**/build/**", "sdk/pkg/**"]
 
 # The root Rust/WASM core is the complete source artifact. Browser, Flutter,
 # Postgres, and protocol surfaces retain isolated target roots.
