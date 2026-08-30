@@ -1,5 +1,7 @@
 # Agent instructions
 
+Parent policy: <https://github.com/ORESoftware/my-ai/blob/main/AGENTS.md>
+
 ## Scope and hierarchy
 
 - These instructions apply to the whole `zed-pkg/zed-sync` repository unless a deeper lowercase `agents.md` adds narrower rules.
@@ -19,6 +21,8 @@ This repository implements Zed's offline-first synchronization engine and is the
 - Never resolve conflicts by silently discarding acknowledged data; make precedence and tombstone behavior explicit and tested.
 - Separate transport availability from correctness. Tests must cover disconnects, duplication, reordering, partial writes, retries, and restart recovery.
 - Keep clocks, randomness, storage, and network I/O injectable where deterministic tests require control.
+- Keep reducers and protocol transformations pure, immutable, total, and exhaustively typed. Effects belong at transport/session boundaries.
+- RxJS/RxDart adapters must remain read-only projections of the canonical state machines, use shared replay with reference-counted teardown, and fail closed on malformed foreign snapshots. Reactive subjects never become parallel state authorities.
 - Keep `zed-sync` completely independent of `ORESoftware/k8s-libs-and-shared-defs`; do not add a dependency in either direction.
 - History is append-only. Do not use rebase, reset, force-push, filter-repo/filter-branch, git clean, branch/tag deletion, or amend pushed commits. Correct mistakes with a new commit or `git revert`.
 - Redact authentication material and user data from logs; never commit credentials, database files containing real data, or production environment files.

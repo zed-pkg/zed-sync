@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// durable local store first (except the server-first/only levels); they
 /// differ in when the call settles and what happens to the local write on
 /// server rejection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WriteMode {
     /// Apply locally + enqueue durably; no network attempt until the next
@@ -19,6 +19,7 @@ pub enum WriteMode {
     LocalOnly,
     /// Apply locally, enqueue, send; a send failure leaves the write queued
     /// for retry. The classic offline-capable optimistic write (default).
+    #[default]
     OptimisticQueue,
     /// Like `OptimisticQueue`, but a send failure is surfaced per the error
     /// policy (the write still stays queued and durable).
@@ -31,31 +32,20 @@ pub enum WriteMode {
     ServerOnly,
 }
 
-impl Default for WriteMode {
-    fn default() -> Self {
-        Self::OptimisticQueue
-    }
-}
-
 /// How write/flush errors are surfaced to the caller.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorPolicy {
     /// Reject/throw to the caller.
     ThrowOnly,
     /// Report through the telemetry/onError channel, settle normally (default
     /// for writes).
+    #[default]
     EmitOnly,
     /// Both.
     ThrowAndEmit,
     /// Neither — the outcome is only visible in the returned result.
     Silent,
-}
-
-impl Default for ErrorPolicy {
-    fn default() -> Self {
-        Self::EmitOnly
-    }
 }
 
 impl ErrorPolicy {
@@ -68,18 +58,13 @@ impl ErrorPolicy {
 }
 
 /// How a dirty-vs-newer-remote conflict is resolved.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictResolution {
     /// Adopt the server row, drop the queued local write (default; safe).
+    #[default]
     ServerWins,
     /// Keep whichever change has the higher HLC — deterministic across
     /// replicas, so leaderless multi-master still converges.
     LastWriteWins,
-}
-
-impl Default for ConflictResolution {
-    fn default() -> Self {
-        Self::ServerWins
-    }
 }
