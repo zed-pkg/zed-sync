@@ -9,7 +9,7 @@
   "releaseState": "blocked-until-certified-package-published",
   "dependency": {
     "package": "opto-sync/opto-sync-clients",
-    "range": "^0.2.0",
+    "range": "^0.4.0",
     "installRoot": "zed_modules/opto-sync/opto-sync-clients"
   },
   "nativeAdapters": {

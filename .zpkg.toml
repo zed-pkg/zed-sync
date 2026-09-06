@@ -14,7 +14,7 @@ url = "https://github.com/zed-pkg/zed-sync"
 # Keep this dependency aligned with opto-sync-adapter.json; the empty lock is a
 # deliberate fail-closed release gate until the certified artifact is published.
 [dependencies]
-"opto-sync/opto-sync-clients" = "^0.2.0"
+"opto-sync/opto-sync-clients" = "^0.4.0"
 
 [install]
 dir = "zed_modules"
