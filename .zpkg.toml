@@ -43,9 +43,10 @@ forge = ["github-packages", "gitlab-packages", "bitbucket-packages"]
 dir = "dart/zed_sync"
 adapter = "dart"
 
-[targets.dart.native]
-registry = "pub.dev"
-package = "zed_sync"
+# dart/zed_sync/pubspec.yaml currently declares `publish_to: none`, so this
+# target is source-distributable through Zed but must not advertise a pub.dev
+# native publication route. Add [targets.dart.native] only together with an
+# explicit Dart publication opt-in and release certification.
 
 [targets.postgres]
 dir = "postgres"
