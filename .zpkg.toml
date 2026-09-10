@@ -57,4 +57,4 @@ dir = "protocol"
 adapter = "none"
 
 [scripts]
-test = "cargo test && npm --prefix sdk test"
+test = "cargo test && npm --prefix sdk test && (cd dart/zed_sync && dart pub get && dart test)"
