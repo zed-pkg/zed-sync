@@ -1,0 +1,47 @@
+name: Dart contract
+
+on:
+  pull_request:
+    paths:
+      - '.zpkg.toml'
+      - 'dart/**'
+      - '.github/workflows/dart.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.zpkg.toml'
+      - 'dart/**'
+      - '.github/workflows/dart.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dart-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dart/zed_sync
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install exact Dart SDK
+        uses: dart-lang/setup-dart@92cfcc5b56b5f03d4418281fd5b0ae0dacbfd9fa
+        with:
+          sdk: '3.13.0'
+      - name: Resolve Dart test dependencies
+        run: dart pub get
+      - name: Check Dart formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze Dart target
+        run: dart analyze
+      - name: Test Dart target
+        run: dart test
