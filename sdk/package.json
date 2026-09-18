@@ -8,16 +8,32 @@
   "main": "src/index.mjs",
   "types": "src/index.d.ts",
   "exports": {
-    ".": { "types": "./src/index.d.ts", "default": "./src/index.mjs" }
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    }
   },
-  "files": ["src", "pkg"],
+  "files": [
+    "src",
+    "pkg"
+  ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:browser": "node --test test/browser/*.test.mjs",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "lint:ores": "if [ -f ../.ores-lint/lint.sh ]; then sh ../.ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores"
   },
   "devDependencies": {
     "playwright": "^1.61.0",
     "typescript": "^5.5.0"
+  },
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
   }
 }
