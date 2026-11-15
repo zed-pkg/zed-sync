@@ -34,6 +34,23 @@ in any order, any number of times — the outcome converges.
 `protocol/change-event.schema.json` is the language-neutral validation shape.
 Integer fields stay within `0..9007199254740991` (exact in Rust, JS, and Dart).
 
+## Canonical HLC sortable keys
+
+All three runtimes expose a strict decoder for the optional sortable key
+`hhhhhhhhhhhh-cccc`: **12 lowercase ASCII hex digits** for a 48-bit
+millisecond wall clock, one dash, and **4 lowercase ASCII hex digits**
+for a 16-bit counter. The actor is separate metadata; it is not serialized
+in the key. Rust: `Hlc::decode(key, actor) -> Option<Hlc>`;
+JavaScript: `decodeHlc(key, actor)` (throws `TypeError`);
+Dart: `Hlc.parse(key, actor)` (throws `FormatException`).
+
+Unlike the existing convenience encoders (which intentionally wrap out-of-range
+values for compatibility), **decoders never normalize** uppercase, whitespace,
+oversize fields, or other non-canonical aliases. Use the object-form version
+in the wire envelope for the full untruncated HLC value. The independent
+`hlc_keys` section of `protocol/conformance.json` is checked by Rust, JS,
+and Dart to prevent parser drift.
+
 ## Reconcile table
 
 | Local | Incoming | Decision |
