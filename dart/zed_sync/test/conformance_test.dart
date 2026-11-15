@@ -36,9 +36,9 @@ void main() {
       expect(stamp.actor, 'replica');
       expect(stamp.encode(), c['key'], reason: c['name'] as String);
     }
-    for (final key in keys['invalid'] as List) {
-      expect(() => Hlc.parse(key as String, 'replica'), throwsFormatException,
-          reason: key as String);
+    for (final key in (keys['invalid'] as List).cast<String>()) {
+      expect(() => Hlc.parse(key, 'replica'), throwsFormatException,
+          reason: key);
     }
   });
 
