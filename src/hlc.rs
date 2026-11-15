@@ -48,6 +48,27 @@ impl Hlc {
         )
     }
 
+    /// Parse a canonical sortable clock key. The actor is supplied separately:
+    /// the key intentionally contains only the 48-bit wall time and 16-bit
+    /// counter. Reject aliases, upper-case hex, overflow, and extra bytes.
+    /// Never interpret a malformed or non-canonical key as a different stamp.
+    pub fn decode(encoded: &str, actor: impl Into<String>) -> Option<Self> {
+        let bytes = encoded.as_bytes();
+        if bytes.len() != 17
+            || bytes[12] != b'-'
+            || bytes.iter().enumerate().any(|(i, &byte)| {
+                i != 12 && !matches!(byte, b'0'..=b'9' | b'a'..=b'f')
+            })
+        {
+            return None;
+        }
+        Some(Self::new(
+            u64::from_str_radix(&encoded[..12], 16).ok()?,
+            u32::from_str_radix(&encoded[13..], 16).ok()?,
+            actor,
+        ))
+    }
+
     /// Advance for a *local* event against the device wall clock. Strictly
     /// monotonic even if `physical_now_ms` jumps backwards.
     pub fn tick(&mut self, physical_now_ms: u64) {
