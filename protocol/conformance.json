@@ -161,7 +161,7 @@
     "_comment": "Canonical sortable key is exactly twelve lowercase hex wall digits, a dash, and four lowercase hex counter digits. Actor metadata is supplied separately. Bad keys must never be normalized.",
     "valid": [
       { "name": "zero", "key": "000000000000-0000", "wall_ms": 0, "counter": 0 },
-      { "name": "example", "key": "0197f3b2c4d1-0003", "wall_ms": 1756378158289, "counter": 3 },
+      { "name": "example", "key": "0197f3b2c4d1-0003", "wall_ms": 1752140268753, "counter": 3 },
       { "name": "maximum", "key": "ffffffffffff-ffff", "wall_ms": 281474976710655, "counter": 65535 }
     ],
     "invalid": [
