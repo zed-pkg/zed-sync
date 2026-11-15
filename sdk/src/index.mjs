@@ -6,7 +6,7 @@ export {
   assertErrorPolicy,
   assertConflictResolution,
 } from "./policy.mjs";
-export { Clock, compareHlc, encodeHlc, MAX_DRIFT_MS } from "./hlc.mjs";
+export { Clock, compareHlc, encodeHlc, decodeHlc, MAX_DRIFT_MS } from "./hlc.mjs";
 export {
   reconcile,
   onAck,
