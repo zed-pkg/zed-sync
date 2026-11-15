@@ -28,6 +28,21 @@ export function encodeHlc(h) {
   return `${wall}-${ctr}`;
 }
 
+/** Decode only a canonical 12-hex/4-hex HLC key. The caller supplies the
+ * actor because it is not encoded in the sortable key.
+ * @param {string} value @param {string} actor @returns {Hlc} */
+export function decodeHlc(value, actor) {
+  if (typeof value !== "string" || value.length !== 17 ||
+      !/^[0-9a-f]{12}-[0-9a-f]{4}$/.test(value) || typeof actor !== "string") {
+    throw new TypeError("non-canonical HLC key");
+  }
+  return {
+    wall_ms: Number.parseInt(value.slice(0, 12), 16),
+    counter: Number.parseInt(value.slice(13), 16),
+    actor,
+  };
+}
+
 /**
  * A device-local clock producing strictly monotonic stamps even when the wall
  * clock jumps backwards.
