@@ -26,6 +26,22 @@ void main() {
     expect(fixture['protocol_version'], 1);
   });
 
+  test('canonical HLC key decoding matches cross-runtime fixtures', () {
+    final keys = fixture['hlc_keys'] as Map<String, dynamic>;
+    for (final item in keys['valid'] as List) {
+      final c = item as Map<String, dynamic>;
+      final stamp = Hlc.parse(c['key'] as String, 'replica');
+      expect(stamp.wallMs, c['wall_ms'], reason: c['name'] as String);
+      expect(stamp.counter, c['counter'], reason: c['name'] as String);
+      expect(stamp.actor, 'replica');
+      expect(stamp.encode(), c['key'], reason: c['name'] as String);
+    }
+    for (final key in (keys['invalid'] as List).cast<String>()) {
+      expect(() => Hlc.parse(key, 'replica'), throwsFormatException,
+          reason: key);
+    }
+  });
+
   test('reconcile matches every shared fixture case', () {
     for (final c in fixture['reconcile'] as List) {
       final local = c['local'] == null

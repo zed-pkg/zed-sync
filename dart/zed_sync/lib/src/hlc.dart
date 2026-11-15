@@ -24,6 +24,20 @@ class Hlc {
     return actor.compareTo(other.actor);
   }
 
+  /// Parse an exact canonical sortable key. The actor is separate metadata.
+  /// Malformed keys and uppercase/ambiguous hex representations are rejected.
+  factory Hlc.parse(String encoded, String actor) {
+    if (encoded.length != 17 ||
+        !RegExp(r'^[0-9a-f]{12}-[0-9a-f]{4}$').hasMatch(encoded)) {
+      throw FormatException('non-canonical HLC key', encoded);
+    }
+    return Hlc(
+      int.parse(encoded.substring(0, 12), radix: 16),
+      int.parse(encoded.substring(13), radix: 16),
+      actor,
+    );
+  }
+
   /// Sortable canonical string, e.g. "0197f3b2c4d1-0003".
   String encode() {
     final wall = (wallMs % 0x1000000000000).toRadixString(16).padLeft(12, '0');

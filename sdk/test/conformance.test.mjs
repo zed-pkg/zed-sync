@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { reconcile, onAck, isOwnEcho } from "../src/core.mjs";
-import { Clock, MAX_DRIFT_MS } from "../src/hlc.mjs";
+import { Clock, MAX_DRIFT_MS, decodeHlc, encodeHlc } from "../src/hlc.mjs";
 
 const fixture = JSON.parse(
   readFileSync(fileURLToPath(new URL("../../protocol/conformance.json", import.meta.url)), "utf8"),
@@ -13,6 +13,17 @@ const fixture = JSON.parse(
 
 test("protocol version is 1", () => {
   assert.equal(fixture.protocol_version, 1);
+});
+
+test("canonical HLC keys decode identically and reject aliases", () => {
+  for (const c of fixture.hlc_keys.valid) {
+    const stamp = decodeHlc(c.key, "replica");
+    assert.deepEqual(stamp, { wall_ms: c.wall_ms, counter: c.counter, actor: "replica" }, c.name);
+    assert.equal(encodeHlc(stamp), c.key, c.name);
+  }
+  for (const key of fixture.hlc_keys.invalid) {
+    assert.throws(() => decodeHlc(key, "replica"), TypeError, JSON.stringify(key));
+  }
 });
 
 test("reconcile matches every shared fixture case", () => {
