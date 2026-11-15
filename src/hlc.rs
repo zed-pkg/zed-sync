@@ -56,9 +56,10 @@ impl Hlc {
         let bytes = encoded.as_bytes();
         if bytes.len() != 17
             || bytes[12] != b'-'
-            || bytes.iter().enumerate().any(|(i, &byte)| {
-                i != 12 && !matches!(byte, b'0'..=b'9' | b'a'..=b'f')
-            })
+            || bytes
+                .iter()
+                .enumerate()
+                .any(|(i, &byte)| i != 12 && !matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
         {
             return None;
         }
