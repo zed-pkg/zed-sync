@@ -15,6 +15,21 @@ struct Fixture {
     echoes: Vec<EchoCase>,
     acks: Vec<AckCase>,
     clock: ClockSection,
+    hlc_keys: HlcKeys,
+}
+
+#[derive(Deserialize)]
+struct HlcKeys {
+    valid: Vec<HlcKeyCase>,
+    invalid: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct HlcKeyCase {
+    name: String,
+    key: String,
+    wall_ms: u64,
+    counter: u32,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +87,18 @@ fn fixture() -> Fixture {
 fn rust_core_conforms_to_the_shared_protocol_fixture() {
     let fixture = fixture();
     assert_eq!(fixture.protocol_version, 1);
+
+    for case in &fixture.hlc_keys.valid {
+        let parsed = Hlc::decode(&case.key, "replica")
+            .unwrap_or_else(|| panic!("valid key rejected: {}", case.name));
+        assert_eq!(parsed.wall_ms, case.wall_ms, "{}", case.name);
+        assert_eq!(parsed.counter, case.counter, "{}", case.name);
+        assert_eq!(parsed.actor, "replica");
+        assert_eq!(parsed.encode(), case.key, "{}", case.name);
+    }
+    for key in &fixture.hlc_keys.invalid {
+        assert!(Hlc::decode(key, "replica").is_none(), "bad key admitted: {key:?}");
+    }
 
     for case in fixture.reconcile {
         assert_eq!(
