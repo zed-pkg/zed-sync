@@ -161,6 +161,8 @@ export function assertConflictResolution(resolution: string): ConflictResolution
 
 export function compareHlc(a: Hlc, b: Hlc): -1 | 0 | 1;
 export function encodeHlc(h: Hlc): string;
+/** Decode a strictly canonical sortable key; throws TypeError on invalid input. */
+export function decodeHlc(value: string, actor: string): Hlc;
 /** Reject a remote stamp whose wall clock runs more than this far ahead (ms). */
 export const MAX_DRIFT_MS: number;
 export class Clock {
