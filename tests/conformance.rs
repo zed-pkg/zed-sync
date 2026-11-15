@@ -97,7 +97,10 @@ fn rust_core_conforms_to_the_shared_protocol_fixture() {
         assert_eq!(parsed.encode(), case.key, "{}", case.name);
     }
     for key in &fixture.hlc_keys.invalid {
-        assert!(Hlc::decode(key, "replica").is_none(), "bad key admitted: {key:?}");
+        assert!(
+            Hlc::decode(key, "replica").is_none(),
+            "bad key admitted: {key:?}"
+        );
     }
 
     for case in fixture.reconcile {
